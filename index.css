@@ -4,7 +4,7 @@
   box-sizing: border-box;
 }
 body {
-  font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Stolzl', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background: var(--bg);
   color: var(--text-primary);
 }
@@ -45,7 +45,7 @@ body {
 }
 
 h1, h2, h3 {
-  font-family: 'Space Grotesk', 'IBM Plex Sans', sans-serif;
+  font-family: 'Actay Wide', 'Stolzl', sans-serif;
   letter-spacing: 0.2px;
 }
 
@@ -180,4 +180,59 @@ button:focus-visible {
 }
 .border-blue-500 {
   border-color: var(--accent) !important;
+}
+@font-face {
+  font-family: 'Actay Wide';
+  src: url('/fonts/ActayWide-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Stolzl';
+  src: url('/fonts/stolzl_thin.otf') format('opentype');
+  font-weight: 200;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Stolzl';
+  src: url('/fonts/stolzl_light.otf') format('opentype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Stolzl';
+  src: url('/fonts/stolzl_regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Stolzl';
+  src: url('/fonts/stolzl_book.otf') format('opentype');
+  font-weight: 450;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Stolzl';
+  src: url('/fonts/stolzl_medium.otf') format('opentype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Stolzl';
+  src: url('/fonts/stolzl_bold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
 }
