@@ -12,6 +12,17 @@ sudo apt install -y nginx git curl ufw
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs
 
+sudo apt install -y mariadb-server
+sudo systemctl enable mariadb
+sudo systemctl start mariadb
+
+sudo mysql <<SQL
+CREATE DATABASE IF NOT EXISTS sport_complex CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'sport_user'@'localhost' IDENTIFIED BY 'sport_pass';
+GRANT ALL PRIVILEGES ON sport_complex.* TO 'sport_user'@'localhost';
+FLUSH PRIVILEGES;
+SQL
+
 sudo ufw allow OpenSSH
 sudo ufw allow 'Nginx Full'
 sudo ufw --force enable
@@ -29,6 +40,11 @@ npm install
 
 # .env для сервера
 cat > $APP_DIR/server/.env <<EOF_ENV
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_USER=sport_user
+DB_PASSWORD=sport_pass
+DB_NAME=sport_complex
 YOOKASSA_SHOP_ID=your_shop_id
 YOOKASSA_SECRET_KEY=your_secret_key
 TINKOFF_TERMINAL_KEY=your_terminal_key
