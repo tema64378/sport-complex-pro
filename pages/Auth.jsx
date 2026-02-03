@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { isApiAvailable, registerUser, loginUser, logoutUser, loginVkDemo } from '../api';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { isApiAvailable, registerUser, loginUser, logoutUser, loginVkDemo, completeVkOneTap } from '../api';
 
 const DEFAULT_USERS = [
   { id: 1, name: 'Администратор', email: 'admin@sportcomplex.com', phone: '+7 (495) 123-45-67', role: 'Администратор', password: 'admin123' },
@@ -39,9 +39,11 @@ export default function Auth({ session, setSession }) {
   const [users, setUsers] = useState([]);
   const [message, setMessage] = useState('');
   const [useApi, setUseApi] = useState(false);
+  const oneTapRef = useRef(null);
+  const oneTapInitedRef = useRef(false);
 
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
-  const [registerForm, setRegisterForm] = useState({ name: '', email: '', phone: '', role: 'Клиент', password: '', confirm: '' });
+  const [registerForm, setRegisterForm] = useState({ name: '', email: '', phone: '', password: '', confirm: '' });
 
   useEffect(() => {
     const stored = loadUsers();
@@ -99,7 +101,6 @@ export default function Auth({ session, setSession }) {
           name: registerForm.name,
           email: registerForm.email,
           phone: registerForm.phone,
-          role: registerForm.role,
           password: registerForm.password,
         });
         try { localStorage.setItem('auth_token', res.token); } catch (e) {}
@@ -107,7 +108,7 @@ export default function Auth({ session, setSession }) {
         setSession(nextSession);
         saveSession(nextSession);
         setActiveTab('login');
-        setRegisterForm({ name: '', email: '', phone: '', role: 'Клиент', password: '', confirm: '' });
+        setRegisterForm({ name: '', email: '', phone: '', password: '', confirm: '' });
         setMessage('Регистрация успешна. Вы вошли в систему.');
         return;
       } catch (e) {
@@ -116,11 +117,11 @@ export default function Auth({ session, setSession }) {
       }
     }
     if (existingEmails.has(registerForm.email.toLowerCase())) return setMessage('Пользователь с таким email уже существует.');
-    const newUser = { id: Date.now(), name: registerForm.name, email: registerForm.email, phone: registerForm.phone, role: registerForm.role, password: registerForm.password };
+    const newUser = { id: Date.now(), name: registerForm.name, email: registerForm.email, phone: registerForm.phone, role: 'Клиент', password: registerForm.password };
     const nextUsers = [newUser, ...users];
     setUsers(nextUsers);
     setActiveTab('login');
-    setRegisterForm({ name: '', email: '', phone: '', role: 'Клиент', password: '', confirm: '' });
+    setRegisterForm({ name: '', email: '', phone: '', password: '', confirm: '' });
     setMessage('Регистрация успешна. Войдите в систему.');
   }
 
@@ -149,9 +150,57 @@ export default function Auth({ session, setSession }) {
   }
 
   function handleVkOAuth() {
-    const base = import.meta.env.VITE_API_BASE || 'http://localhost:4000/api';
+    const base = import.meta.env.VITE_API_BASE || '/api';
     window.location.href = `${base}/auth/vk/login`;
   }
+
+  useEffect(() => {
+    if (!oneTapRef.current || oneTapInitedRef.current) return;
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/@vkid/sdk@2.8.5/dist-sdk/umd/index.js';
+    script.async = true;
+    script.onload = () => {
+      if (!('VKIDSDK' in window)) return;
+      const VKID = window.VKIDSDK;
+      const appId = Number(import.meta.env.VITE_VK_APP_ID || 54440927);
+      VKID.Config.init({
+        app: appId,
+        redirectUrl: 'https://sportcomplecspro.ru/api/auth/vk/callback',
+        responseMode: VKID.ConfigResponseMode.Callback,
+        source: VKID.ConfigSource.LOWCODE,
+        scope: '',
+      });
+      const oneTap = new VKID.OneTap();
+      oneTap.render({
+        container: oneTapRef.current,
+        showAlternativeLogin: true,
+        oauthList: ['ok_ru', 'mail_ru'],
+      })
+      .on(VKID.WidgetEvents.ERROR, (error) => {
+        console.error('VK One Tap error', error);
+      })
+      .on(VKID.OneTapInternalEvents.LOGIN_SUCCESS, async (payload) => {
+        try {
+          const code = payload.code;
+          const deviceId = payload.device_id;
+          const data = await VKID.Auth.exchangeCode(code, deviceId);
+          const res = await completeVkOneTap(data);
+          try { localStorage.setItem('auth_token', res.token); } catch (e) {}
+          const nextSession = { ...res.user, loginAt: new Date().toISOString() };
+          setSession(nextSession);
+          saveSession(nextSession);
+          setMessage('Вход через VK выполнен.');
+        } catch (e) {
+          setMessage('Не удалось выполнить вход через VK.');
+        }
+      });
+      oneTapInitedRef.current = true;
+    };
+    document.body.appendChild(script);
+    return () => {
+      script.remove();
+    };
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -199,6 +248,10 @@ export default function Auth({ session, setSession }) {
               <button onClick={handleLogin} className="bg-blue-600 text-white px-6 py-2 rounded-lg">Войти</button>
               <button onClick={handleVkDemo} className="border border-blue-400 text-blue-400 px-6 py-2 rounded-lg">Войти через VK (демо)</button>
               <button onClick={handleVkOAuth} className="border border-sky-500 text-sky-500 px-6 py-2 rounded-lg">Войти через VK (OAuth)</button>
+              <div className="pt-4">
+                <div className="text-xs text-slate-400 mb-2">VK One Tap</div>
+                <div ref={oneTapRef} />
+              </div>
             </div>
           )}
 
@@ -235,17 +288,8 @@ export default function Auth({ session, setSession }) {
                     placeholder="client@example.com"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm text-slate-400 mb-2">Роль</label>
-                  <select
-                    value={registerForm.role}
-                    onChange={e => setRegisterForm({ ...registerForm, role: e.target.value })}
-                    className="w-full px-4 py-2 rounded-lg border bg-white/5 text-slate-200"
-                  >
-                    <option>Клиент</option>
-                    <option>Тренер</option>
-                    <option>Администратор</option>
-                  </select>
+                <div className="flex items-end">
+                  <div className="text-sm text-slate-400">Роль при регистрации: Клиент</div>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

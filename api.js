@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000/api';
+const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 function getToken() {
   try { return localStorage.getItem('auth_token'); } catch (e) { return null; }
@@ -8,7 +8,7 @@ async function apiFetch(url, options = {}) {
   const token = getToken();
   const headers = { ...(options.headers || {}) };
   if (token) headers.Authorization = `Bearer ${token}`;
-  return apiFetch(url, { ...options, headers });
+  return fetch(url, { ...options, headers });
 }
 
 async function isApiAvailable() {
@@ -279,6 +279,16 @@ async function loginVkDemo() {
   return res.json();
 }
 
+async function completeVkOneTap(payload) {
+  const res = await apiFetch(`${API_BASE}/auth/vk/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {}),
+  });
+  if (!res.ok) throw new Error('Auth vk complete failed');
+  return res.json();
+}
+
 // Services & Receipts
 async function fetchServices() {
   const res = await apiFetch(`${API_BASE}/services`);
@@ -417,6 +427,40 @@ async function downloadCsvReport(reportType, filters = {}) {
   link.remove();
 }
 
+// Users
+async function fetchUsers() {
+  const res = await apiFetch(`${API_BASE}/users`);
+  if (!res.ok) throw new Error('Users fetch failed');
+  return res.json();
+}
+
+async function createUser(payload) {
+  const res = await apiFetch(`${API_BASE}/users`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('Users create failed');
+  return res.json();
+}
+
+async function updateUser(id, payload) {
+  const res = await apiFetch(`${API_BASE}/users/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('Users update failed');
+  return res.json();
+}
+
+// Analytics
+async function fetchAnalytics() {
+  const res = await apiFetch(`${API_BASE}/analytics/overview`);
+  if (!res.ok) throw new Error('Analytics fetch failed');
+  return res.json();
+}
+
 export { isApiAvailable, fetchMembers, createMember, updateMember, deleteMember,
   fetchTrainers, createTrainer, updateTrainer, deleteTrainer,
   fetchClasses, createClass, updateClass, deleteClass,
@@ -427,4 +471,5 @@ export { isApiAvailable, fetchMembers, createMember, updateMember, deleteMember,
   fetchDeals, createDeal, updateDeal, deleteDeal, fetchForecast, searchAll,
   fetchMembersReport, fetchPaymentsReport, fetchBookingsReport, fetchSummary, downloadCsvReport,
   fetchPaymentProviders, createMockPaymentLink,
-  createYooKassaPayment, createTinkoffInit, createTinkoffSbpQr, createTinkoffSberpayQr };
+  createYooKassaPayment, createTinkoffInit, createTinkoffSbpQr, createTinkoffSberpayQr,
+  fetchUsers, createUser, updateUser, fetchAnalytics, completeVkOneTap };

@@ -42,6 +42,30 @@ function tinkoffToken(payload, password) {
   return crypto.createHash('sha256').update(concat).digest('hex');
 }
 
+function parseDate(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function lastMonths(count = 6) {
+  const now = new Date();
+  const months = [];
+  for (let i = count - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(d);
+  }
+  return months;
+}
+
+function monthLabel(date) {
+  return date.toLocaleString('ru-RU', { month: 'short' }).replace('.', '');
+}
+
+function monthKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
 async function authRequired(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
@@ -77,14 +101,14 @@ app.get('/api/ping', (req, res) => res.json({ ok: true }));
 
 // --- Auth ---
 app.post('/api/auth/register', async (req, res) => {
-  const { name, email, phone, role, password } = req.body;
+  const { name, email, phone, password } = req.body;
   if (!email || !password || !name) return res.status(400).json({ error: 'Missing fields' });
   try {
     const [exists] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
     if (exists[0]) return res.status(409).json({ error: 'User already exists' });
     const [result] = await pool.query(
       'INSERT INTO users (name,email,phone,role,password) VALUES (?,?,?,?,?)',
-      [name, email, phone || '', role || 'Клиент', password]
+      [name, email, phone || '', 'Клиент', password]
     );
     const [users] = await pool.query('SELECT id, name, email, phone, role FROM users WHERE id = ?', [result.insertId]);
     const user = users[0];
@@ -143,6 +167,48 @@ app.post('/api/auth/vk-demo', async (req, res) => {
   }
 });
 
+app.post('/api/auth/vk/complete', async (req, res) => {
+  const payload = req.body || {};
+  const accessToken = payload.access_token || payload.accessToken || payload.token;
+  if (!accessToken) return res.status(400).json({ error: 'Missing access token' });
+  try {
+    let userInfo = payload.user || payload.user_info;
+    if (!userInfo) {
+      const query = `/method/users.get?access_token=${encodeURIComponent(accessToken)}&v=5.131&fields=photo_200,domain`;
+      const vkRes = await httpsJsonRequest({ hostname: 'api.vk.com', path: query, method: 'GET' });
+      userInfo = Array.isArray(vkRes.data?.response) ? vkRes.data.response[0] : null;
+    }
+    if (!userInfo) return res.status(400).json({ error: 'VK user not found' });
+
+    const vkId = userInfo.id || userInfo.user_id || userInfo.uid;
+    const fullName = `${userInfo.first_name || ''} ${userInfo.last_name || ''}`.trim() || 'VK Пользователь';
+    const email = payload.email || userInfo.email || `vk_${vkId}@vk.com`;
+
+    const [exists] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
+    let user = exists[0];
+    if (!user) {
+      const [result] = await pool.query(
+        'INSERT INTO users (name,email,phone,role,password) VALUES (?,?,?,?,?)',
+        [fullName, email, '', 'Клиент', 'vk_oauth']
+      );
+      const [rows] = await pool.query('SELECT * FROM users WHERE id = ?', [result.insertId]);
+      user = rows[0];
+      await pool.query(
+        'INSERT INTO members (name,email,phone,membership,joinDate,status) VALUES (?,?,?,?,?,?)',
+        [user.name, user.email, '', 'Базовый', new Date().toISOString().slice(0, 10), 'Активный']
+      );
+    }
+
+    const token = generateToken();
+    const createdAt = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString();
+    await pool.query('INSERT INTO sessions (userId, token, createdAt, expiresAt) VALUES (?,?,?,?)', [user.id, token, createdAt, expiresAt]);
+    res.json({ user: { id: user.id, name: user.name, email: user.email, phone: user.phone, role: user.role }, token });
+  } catch (e) {
+    res.status(500).json({ error: 'VK auth failed' });
+  }
+});
+
 app.get('/api/auth/me', authRequired, (req, res) => {
   res.json({ user: { id: req.user.id, name: req.user.name, email: req.user.email, phone: req.user.phone, role: req.user.role } });
 });
@@ -150,6 +216,71 @@ app.get('/api/auth/me', authRequired, (req, res) => {
 app.post('/api/auth/logout', authRequired, async (req, res) => {
   await pool.query('DELETE FROM sessions WHERE token = ?', [req.user.token]);
   res.json({ success: true });
+});
+
+// --- Users ---
+app.get('/api/users', authRequired, requireRole(['Администратор']), async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT id, name, email, phone, role FROM users ORDER BY id DESC');
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: 'Users fetch failed' });
+  }
+});
+
+app.post('/api/users', authRequired, requireRole(['Администратор']), async (req, res) => {
+  const { name, email, phone, role, password } = req.body || {};
+  if (!name || !email || !password) return res.status(400).json({ error: 'Missing fields' });
+  try {
+    const [exists] = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
+    if (exists[0]) return res.status(409).json({ error: 'User already exists' });
+    const [result] = await pool.query(
+      'INSERT INTO users (name,email,phone,role,password) VALUES (?,?,?,?,?)',
+      [name, email, phone || '', role || 'Клиент', password]
+    );
+    const [rows] = await pool.query('SELECT id, name, email, phone, role FROM users WHERE id = ?', [result.insertId]);
+    const user = rows[0];
+    if (user.role === 'Клиент') {
+      await pool.query(
+        'INSERT INTO members (name,email,phone,membership,joinDate,status) VALUES (?,?,?,?,?,?)',
+        [user.name, user.email, user.phone || '', 'Базовый', new Date().toISOString().slice(0, 10), 'Активный']
+      );
+    }
+    res.status(201).json(user);
+  } catch (e) {
+    res.status(500).json({ error: 'Users create failed' });
+  }
+});
+
+app.put('/api/users/:id', authRequired, requireRole(['Администратор']), async (req, res) => {
+  const id = req.params.id;
+  const { name, email, phone, role, password } = req.body || {};
+  try {
+    const [rows] = await pool.query('SELECT * FROM users WHERE id = ?', [id]);
+    const existing = rows[0];
+    if (!existing) return res.status(404).json({ error: 'User not found' });
+    const nextRole = role || existing.role;
+    const nextEmail = email || existing.email;
+    const nextName = name || existing.name;
+    const nextPhone = phone || existing.phone || '';
+    await pool.query(
+      'UPDATE users SET name=?, email=?, phone=?, role=?, password=COALESCE(?, password) WHERE id = ?',
+      [nextName, nextEmail, nextPhone, nextRole, password || null, id]
+    );
+    if (nextRole === 'Клиент') {
+      const [members] = await pool.query('SELECT id FROM members WHERE email = ?', [nextEmail]);
+      if (!members[0]) {
+        await pool.query(
+          'INSERT INTO members (name,email,phone,membership,joinDate,status) VALUES (?,?,?,?,?,?)',
+          [nextName, nextEmail, nextPhone, 'Базовый', new Date().toISOString().slice(0, 10), 'Активный']
+        );
+      }
+    }
+    const [updated] = await pool.query('SELECT id, name, email, phone, role FROM users WHERE id = ?', [id]);
+    res.json(updated[0]);
+  } catch (e) {
+    res.status(500).json({ error: 'Users update failed' });
+  }
 });
 
 // --- Members ---
@@ -433,6 +564,120 @@ app.delete('/api/deals/:id', authRequired, requireRole(['Администрат�
   const id = req.params.id;
   await pool.query('DELETE FROM deals WHERE id = ?', [id]);
   res.json({ success: true });
+});
+
+// --- Analytics ---
+app.get('/api/analytics/overview', authRequired, requireRole(['Администратор', 'Тренер']), async (req, res) => {
+  try {
+    const [[membersCount]] = await pool.query('SELECT COUNT(*) AS cnt FROM members');
+    const [[trainersCount]] = await pool.query('SELECT COUNT(*) AS cnt FROM trainers');
+    const [[classesCount]] = await pool.query('SELECT COUNT(*) AS cnt FROM classes');
+    const [members] = await pool.query('SELECT * FROM members');
+    const [payments] = await pool.query('SELECT * FROM payments');
+    const [bookings] = await pool.query('SELECT * FROM bookings');
+    const [classes] = await pool.query('SELECT * FROM classes');
+
+    const now = new Date();
+    const monthKeyNow = monthKey(now);
+
+    let monthRevenue = 0;
+    const revenueByMonthMap = {};
+    payments.forEach((p) => {
+      const d = parseDate(p.date);
+      if (!d) return;
+      const key = monthKey(d);
+      revenueByMonthMap[key] = (revenueByMonthMap[key] || 0) + Number(p.amount || 0);
+      if (key === monthKeyNow) monthRevenue += Number(p.amount || 0);
+    });
+
+    const newMembersMonth = members.filter((m) => {
+      const d = parseDate(m.joinDate);
+      return d && monthKey(d) === monthKeyNow;
+    }).length;
+
+    const activeMembers = members.filter(m => String(m.status || '').toLowerCase() === 'активный').length;
+    const retentionRate = membersCount.cnt ? Math.round((activeMembers / membersCount.cnt) * 100) : 0;
+
+    const last = lastMonths(6);
+    const monthlyMembers = last.map((d) => {
+      const key = monthKey(d);
+      const newcomers = members.filter((m) => {
+        const md = parseDate(m.joinDate);
+        return md && monthKey(md) === key;
+      }).length;
+      return { month: monthLabel(d), new: newcomers, churn: 0, total: 0 };
+    });
+    let cumulative = 0;
+    monthlyMembers.forEach((m) => { cumulative += m.new; m.total = cumulative; });
+
+    const revenueByMonth = last.map((d) => ({
+      month: monthLabel(d),
+      revenue: revenueByMonthMap[monthKey(d)] || 0,
+    }));
+
+    const bookingByClass = {};
+    bookings.forEach((b) => {
+      const key = b.className || b.class || 'Без названия';
+      bookingByClass[key] = (bookingByClass[key] || 0) + 1;
+    });
+    const classAttendance = classes.map((c) => ({
+      name: c.name,
+      attendance: Math.max(Number(c.enrolled || 0), bookingByClass[c.name] || 0),
+      capacity: Number(c.capacity || 0),
+    }));
+
+    const membershipDistribution = Object.entries(
+      members.reduce((acc, m) => {
+        const key = m.membership || 'Без абонемента';
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {})
+    ).map(([name, value], idx) => ({
+      name,
+      value,
+      color: ['#16a34a', '#059669', '#22c55e', '#4ade80', '#15803d'][idx % 5],
+    }));
+
+    const peakMap = {};
+    bookings.forEach((b) => {
+      const hour = (b.time || '').slice(0, 2) || '00';
+      const label = `${hour}:00`;
+      peakMap[label] = (peakMap[label] || 0) + 1;
+    });
+    const peakHours = Object.entries(peakMap)
+      .map(([hour, members]) => ({ hour, members }))
+      .sort((a, b) => a.hour.localeCompare(b.hour));
+
+    const dailyMap = {};
+    bookings.forEach((b) => {
+      const d = parseDate(b.date);
+      if (!d) return;
+      const key = d.toISOString().slice(0, 10);
+      dailyMap[key] = (dailyMap[key] || 0) + 1;
+    });
+    const dailyCounts = Object.values(dailyMap);
+    const avgAttendance = dailyCounts.length ? Math.round(dailyCounts.reduce((a, c) => a + c, 0) / dailyCounts.length) : 0;
+
+    res.json({
+      metrics: {
+        totalMembers: membersCount.cnt || 0,
+        totalTrainers: trainersCount.cnt || 0,
+        totalClasses: classesCount.cnt || 0,
+        monthRevenue,
+        newMembersMonth,
+        activeMembers,
+        avgAttendance,
+        retentionRate,
+      },
+      monthlyMembers,
+      revenueByMonth,
+      classAttendance,
+      membershipDistribution,
+      peakHours,
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Analytics failed' });
+  }
 });
 
 // --- Forecast ---

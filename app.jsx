@@ -10,6 +10,7 @@ import Payments from './pages/Payments';
 import Analytics from './pages/Analytics';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
+import Users from './pages/Users';
 import Auth from './pages/Auth';
 import Services from './pages/Services';
 import Deals from './pages/Deals';
@@ -79,6 +80,7 @@ function App() {
     reports: ['Администратор'],
     search: ['Администратор', 'Тренер'],
     settings: ['Администратор'],
+    users: ['Администратор'],
   };
 
   const isAllowed = session && roleAccess[currentPage]?.includes(session.role);
@@ -112,6 +114,8 @@ function App() {
         return <Reports />;
       case 'settings':
         return <Settings />;
+      case 'users':
+        return <Users />;
       case 'auth':
         return <Auth session={session} setSession={setSession} />;
       case 'services':

@@ -16,6 +16,7 @@ export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setS
     { id: 'forecast', label: 'Прогноз спроса', icon: 'fas fa-wave-square' },
     { id: 'reports', label: 'Отчеты', icon: 'fas fa-file-csv' },
     { id: 'search', label: 'Быстрый поиск', icon: 'fas fa-magnifying-glass' },
+    { id: 'users', label: 'Пользователи', icon: 'fas fa-user-shield' },
     { id: 'settings', label: 'Параметры', icon: 'fas fa-cog' },
   ];
 
@@ -34,6 +35,7 @@ export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setS
     forecast: ['Администратор', 'Тренер'],
     reports: ['Администратор'],
     search: ['Администратор', 'Тренер'],
+    users: ['Администратор'],
     settings: ['Администратор'],
   };
 
