@@ -46,7 +46,7 @@ export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setS
     <div className={`fixed left-0 top-0 h-screen transition-all duration-300 z-50 ${sidebarOpen ? 'w-64' : 'w-20'} glass-nav text-slate-800 flex flex-col`}> 
       <div className="p-6 border-b border-transparent">
         <div className="flex items-center justify-between">
-          {sidebarOpen && <h2 className="text-xl font-bold text-slate-900">Спортивный Комплекс Pro</h2>}
+          {sidebarOpen && <h2 className="text-xl font-bold text-slate-900 tracking-wide">Спортивный Комплекс Pro</h2>}
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
             className="p-2 hover:bg-slate-100/40 rounded-lg transition-colors"

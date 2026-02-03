@@ -151,7 +151,7 @@ function App() {
       />
       <div className={`flex-1 overflow-auto transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-20'}`}>
         <header className="sticky top-0 z-40">
-          <div className="glass p-4 px-6 shadow-sm border-b border-transparent">
+          <div className="topbar p-4 px-6 shadow-sm border-b border-transparent">
             <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <button
