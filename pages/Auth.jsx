@@ -41,6 +41,7 @@ export default function Auth({ session, setSession }) {
   const [useApi, setUseApi] = useState(false);
   const oneTapRef = useRef(null);
   const oneTapInitedRef = useRef(false);
+  const [oneTapError, setOneTapError] = useState('');
 
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [registerForm, setRegisterForm] = useState({ name: '', email: '', phone: '', password: '', confirm: '' });
@@ -156,11 +157,17 @@ export default function Auth({ session, setSession }) {
 
   useEffect(() => {
     if (!oneTapRef.current || oneTapInitedRef.current) return;
-    const script = document.createElement('script');
-    script.src = 'https://unpkg.com/@vkid/sdk@2.8.5/dist-sdk/umd/index.js';
-    script.async = true;
-    script.onload = () => {
-      if (!('VKIDSDK' in window)) return;
+    let attempts = 0;
+    const timer = setInterval(() => {
+      attempts += 1;
+      if (!('VKIDSDK' in window)) {
+        if (attempts >= 20) {
+          clearInterval(timer);
+          setOneTapError('VK One Tap не загрузился. Проверьте блокировщик рекламы или сеть.');
+        }
+        return;
+      }
+      clearInterval(timer);
       const VKID = window.VKIDSDK;
       const appId = Number(import.meta.env.VITE_VK_APP_ID || 54440927);
       VKID.Config.init({
@@ -178,6 +185,7 @@ export default function Auth({ session, setSession }) {
       })
       .on(VKID.WidgetEvents.ERROR, (error) => {
         console.error('VK One Tap error', error);
+        setOneTapError('VK One Tap ошибка. Попробуйте позже.');
       })
       .on(VKID.OneTapInternalEvents.LOGIN_SUCCESS, async (payload) => {
         try {
@@ -195,11 +203,8 @@ export default function Auth({ session, setSession }) {
         }
       });
       oneTapInitedRef.current = true;
-    };
-    document.body.appendChild(script);
-    return () => {
-      script.remove();
-    };
+    }, 200);
+    return () => clearInterval(timer);
   }, []);
 
   return (
@@ -250,7 +255,8 @@ export default function Auth({ session, setSession }) {
               <button onClick={handleVkOAuth} className="border border-sky-500 text-sky-500 px-6 py-2 rounded-lg">Войти через VK (OAuth)</button>
               <div className="pt-4">
                 <div className="text-xs text-slate-400 mb-2">VK One Tap</div>
-                <div ref={oneTapRef} />
+                <div ref={oneTapRef} style={{ minHeight: 52 }} />
+                {oneTapError && <div className="text-xs text-red-400 mt-2">{oneTapError}</div>}
               </div>
             </div>
           )}
