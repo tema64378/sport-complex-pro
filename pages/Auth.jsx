@@ -160,7 +160,8 @@ export default function Auth({ session, setSession }) {
     let attempts = 0;
     const timer = setInterval(() => {
       attempts += 1;
-      if (!('VKIDSDK' in window)) {
+      const VKGlobal = window.VKIDSDK || window.VKID;
+      if (!VKGlobal) {
         if (attempts >= 20) {
           clearInterval(timer);
           setOneTapError('VK One Tap не загрузился. Проверьте блокировщик рекламы или сеть.');
@@ -168,7 +169,7 @@ export default function Auth({ session, setSession }) {
         return;
       }
       clearInterval(timer);
-      const VKID = window.VKIDSDK;
+      const VKID = VKGlobal;
       const appId = Number(import.meta.env.VITE_VK_APP_ID || 54440927);
       VKID.Config.init({
         app: appId,
