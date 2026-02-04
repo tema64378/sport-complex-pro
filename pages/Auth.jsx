@@ -209,154 +209,238 @@ export default function Auth({ session, setSession }) {
   }, []);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-slate-900">Авторизация и регистрация</h1>
-        <p className="text-slate-400 text-sm mt-2">Клиенты и сотрудники могут входить в систему и создавать аккаунты</p>
-      </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center p-4">
+      <div className="w-full max-w-5xl">
+        {/* Header */}
+        <div className="text-center mb-12">
+          <h1 className="text-5xl font-bold text-white mb-2">SportComplex Pro</h1>
+          <p className="text-blue-200 text-lg">Ваш персональный спортивный клуб</p>
+        </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 glass-card p-6">
-          <div className="flex gap-2 border-b border-white/10 mb-6">
-            {['login', 'register'].map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-4 py-2 font-medium border-b-2 transition ${activeTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-700'}`}
-              >
-                {tab === 'login' ? 'Вход' : 'Регистрация'}
-              </button>
-            ))}
-          </div>
-
-          {activeTab === 'login' && (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm text-slate-400 mb-2">Email</label>
-                <input
-                  type="email"
-                  value={loginForm.email}
-                  onChange={e => setLoginForm({ ...loginForm, email: e.target.value })}
-                  className="w-full px-4 py-2 rounded-lg border bg-white/5 text-slate-200"
-                  placeholder="name@example.com"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-slate-400 mb-2">Пароль</label>
-                <input
-                  type="password"
-                  value={loginForm.password}
-                  onChange={e => setLoginForm({ ...loginForm, password: e.target.value })}
-                  className="w-full px-4 py-2 rounded-lg border bg-white/5 text-slate-200"
-                  placeholder="••••••••"
-                />
-              </div>
-              <button onClick={handleLogin} className="bg-blue-600 text-white px-6 py-2 rounded-lg">Войти</button>
-              <button onClick={handleVkDemo} className="border border-blue-400 text-blue-400 px-6 py-2 rounded-lg">Войти через VK (демо)</button>
-              <button onClick={handleVkOAuth} className="border border-sky-500 text-sky-500 px-6 py-2 rounded-lg">Войти через VK (OAuth)</button>
-              <div className="pt-4">
-                <div className="text-xs text-slate-400 mb-2">VK One Tap</div>
-                <div ref={oneTapRef} style={{ minHeight: 52 }} />
-                {oneTapError && <div className="text-xs text-red-400 mt-2">{oneTapError}</div>}
-              </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Форма входа/регистрации */}
+          <div className="backdrop-blur-md bg-white/10 rounded-2xl border border-white/20 shadow-2xl p-8">
+            <div className="flex gap-4 mb-8">
+              {['login', 'register'].map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`flex-1 py-3 px-4 rounded-xl font-semibold transition-all duration-300 ${
+                    activeTab === tab
+                      ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg'
+                      : 'bg-white/5 text-white/60 hover:bg-white/10'
+                  }`}
+                >
+                  {tab === 'login' ? '🔐 Вход' : '✨ Регистрация'}
+                </button>
+              ))}
             </div>
-          )}
 
-          {activeTab === 'register' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {activeTab === 'login' && (
+              <div className="space-y-5">
                 <div>
-                  <label className="block text-sm text-slate-400 mb-2">Имя</label>
+                  <label className="block text-sm font-semibold text-blue-200 mb-2">Email</label>
                   <input
-                    value={registerForm.name}
-                    onChange={e => setRegisterForm({ ...registerForm, name: e.target.value })}
-                    className="w-full px-4 py-2 rounded-lg border bg-white/5 text-slate-200"
-                    placeholder="Иван Петров"
+                    type="email"
+                    value={loginForm.email}
+                    onChange={e => setLoginForm({ ...loginForm, email: e.target.value })}
+                    className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:border-blue-400 focus:bg-white/15 transition"
+                    placeholder="admin@sportcomplex.com"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-400 mb-2">Телефон</label>
+                  <label className="block text-sm font-semibold text-blue-200 mb-2">Пароль</label>
                   <input
-                    value={registerForm.phone}
-                    onChange={e => setRegisterForm({ ...registerForm, phone: e.target.value })}
-                    className="w-full px-4 py-2 rounded-lg border bg-white/5 text-slate-200"
-                    placeholder="+7 (900) 000-00-00"
+                    type="password"
+                    value={loginForm.password}
+                    onChange={e => setLoginForm({ ...loginForm, password: e.target.value })}
+                    className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:border-blue-400 focus:bg-white/15 transition"
+                    placeholder="••••••••"
                   />
+                </div>
+                
+                <button 
+                  onClick={handleLogin}
+                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-semibold hover:shadow-lg hover:shadow-blue-500/50 transition-all duration-300 transform hover:scale-105"
+                >
+                  Войти в систему
+                </button>
+
+                <div className="relative py-4">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-white/10"></div>
+                  </div>
+                  <div className="relative flex justify-center text-sm">
+                    <span className="px-2 bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 text-white/60">или</span>
+                  </div>
+                </div>
+
+                <button 
+                  onClick={handleVkDemo}
+                  className="w-full py-3 px-4 rounded-xl border-2 border-blue-400 text-blue-300 font-semibold hover:bg-blue-400/10 transition-all duration-300"
+                >
+                  ВКонтакте (демо)
+                </button>
+
+                <button 
+                  onClick={handleVkOAuth}
+                  className="w-full py-3 px-4 rounded-xl border-2 border-cyan-400 text-cyan-300 font-semibold hover:bg-cyan-400/10 transition-all duration-300"
+                >
+                  ВКонтакте (OAuth)
+                </button>
+
+                <div className="pt-2">
+                  <div ref={oneTapRef} style={{ minHeight: 52 }} />
+                  {oneTapError && <div className="text-xs text-red-400 mt-2 text-center">{oneTapError}</div>}
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            )}
+
+            {activeTab === 'register' && (
+              <div className="space-y-5">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-blue-200 mb-2">Имя</label>
+                    <input
+                      value={registerForm.name}
+                      onChange={e => setRegisterForm({ ...registerForm, name: e.target.value })}
+                      className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:border-blue-400 focus:bg-white/15 transition"
+                      placeholder="Иван Петров"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-blue-200 mb-2">Телефон</label>
+                    <input
+                      value={registerForm.phone}
+                      onChange={e => setRegisterForm({ ...registerForm, phone: e.target.value })}
+                      className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:border-blue-400 focus:bg-white/15 transition"
+                      placeholder="+7 (900) 000-00-00"
+                    />
+                  </div>
+                </div>
+
                 <div>
-                  <label className="block text-sm text-slate-400 mb-2">Email</label>
+                  <label className="block text-sm font-semibold text-blue-200 mb-2">Email</label>
                   <input
                     type="email"
                     value={registerForm.email}
                     onChange={e => setRegisterForm({ ...registerForm, email: e.target.value })}
-                    className="w-full px-4 py-2 rounded-lg border bg-white/5 text-slate-200"
-                    placeholder="client@example.com"
+                    className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:border-blue-400 focus:bg-white/15 transition"
+                    placeholder="ваша@почта.com"
                   />
                 </div>
-                <div className="flex items-end">
-                  <div className="text-sm text-slate-400">Роль при регистрации: Клиент</div>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-slate-400 mb-2">Пароль</label>
-                  <input
-                    type="password"
-                    value={registerForm.password}
-                    onChange={e => setRegisterForm({ ...registerForm, password: e.target.value })}
-                    className="w-full px-4 py-2 rounded-lg border bg-white/5 text-slate-200"
-                    placeholder="Придумайте пароль"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-slate-400 mb-2">Подтверждение</label>
-                  <input
-                    type="password"
-                    value={registerForm.confirm}
-                    onChange={e => setRegisterForm({ ...registerForm, confirm: e.target.value })}
-                    className="w-full px-4 py-2 rounded-lg border bg-white/5 text-slate-200"
-                    placeholder="Повторите пароль"
-                  />
-                </div>
-              </div>
-              <button onClick={handleRegister} className="bg-blue-600 text-white px-6 py-2 rounded-lg">Создать аккаунт</button>
-            </div>
-          )}
 
-          {message && <div className="mt-4 text-sm text-slate-600">{message}</div>}
-        </div>
-
-        <div className="glass-card p-6 space-y-4">
-          <h3 className="text-lg font-bold text-slate-900">Текущая сессия</h3>
-          {session ? (
-            <div className="space-y-2">
-              <p className="text-sm text-slate-500">Пользователь</p>
-              <p className="text-lg font-semibold text-slate-900">{session.name}</p>
-              <div className="flex flex-wrap gap-2">
-                <span className="px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800">{session.role}</span>
-                <span className="px-3 py-1 rounded-full text-sm bg-slate-100 text-slate-700">{session.email}</span>
-              </div>
-              <p className="text-xs text-slate-400">Вход: {new Date(session.loginAt).toLocaleString('ru-RU')}</p>
-              <button onClick={handleLogout} className="mt-2 w-full bg-slate-900 text-white py-2 rounded-lg">Выйти</button>
-            </div>
-          ) : (
-            <p className="text-sm text-slate-400">Нет активной сессии. Войдите или зарегистрируйтесь.</p>
-          )}
-
-          {!useApi && (
-            <div className="pt-4 border-t border-white/10">
-              <p className="text-sm text-slate-400">Тестовые учетные записи</p>
-              <div className="mt-2 space-y-2">
-                {users.slice(0, 2).map(user => (
-                  <div key={user.id} className="text-sm text-slate-700">
-                    {user.email} / {user.password}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-blue-200 mb-2">Пароль</label>
+                    <input
+                      type="password"
+                      value={registerForm.password}
+                      onChange={e => setRegisterForm({ ...registerForm, password: e.target.value })}
+                      className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:border-blue-400 focus:bg-white/15 transition"
+                      placeholder="Пароль"
+                    />
                   </div>
-                ))}
+                  <div>
+                    <label className="block text-sm font-semibold text-blue-200 mb-2">Подтверждение</label>
+                    <input
+                      type="password"
+                      value={registerForm.confirm}
+                      onChange={e => setRegisterForm({ ...registerForm, confirm: e.target.value })}
+                      className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:border-blue-400 focus:bg-white/15 transition"
+                      placeholder="Повтор"
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+                  <p className="text-sm text-white/70">
+                    ✓ <span className="text-blue-300">Роль при регистрации:</span><br/>
+                    <span className="font-semibold text-white">Клиент</span>
+                  </p>
+                </div>
+
+                <button 
+                  onClick={handleRegister}
+                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white font-semibold hover:shadow-lg hover:shadow-green-500/50 transition-all duration-300 transform hover:scale-105"
+                >
+                  Создать аккаунт
+                </button>
               </div>
+            )}
+
+            {message && (
+              <div className={`mt-6 p-4 rounded-xl text-center font-semibold ${
+                message.includes('успешно') || message.includes('Добро')
+                  ? 'bg-green-500/20 border border-green-400/50 text-green-300'
+                  : 'bg-red-500/20 border border-red-400/50 text-red-300'
+              }`}>
+                {message}
+              </div>
+            )}
+          </div>
+
+          {/* Текущая сессия */}
+          <div className="backdrop-blur-md bg-white/10 rounded-2xl border border-white/20 shadow-2xl p-8 flex flex-col justify-between">
+            <div>
+              <h3 className="text-2xl font-bold text-white mb-6">Текущая сессия</h3>
+              
+              {session ? (
+                <div className="space-y-6">
+                  <div className="bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border border-blue-400/30 rounded-xl p-6">
+                    <p className="text-sm text-blue-300 font-semibold mb-2">Вы вошли как</p>
+                    <p className="text-3xl font-bold text-white mb-4">{session.name}</p>
+                    
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">👤</span>
+                        <div>
+                          <p className="text-xs text-white/60">Роль</p>
+                          <p className="text-white font-semibold">{session.role}</p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">📧</span>
+                        <div>
+                          <p className="text-xs text-white/60">Email</p>
+                          <p className="text-white font-semibold text-sm">{session.email}</p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">🕐</span>
+                        <div>
+                          <p className="text-xs text-white/60">Вход</p>
+                          <p className="text-white font-semibold text-sm">{new Date(session.loginAt).toLocaleString('ru-RU')}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button 
+                    onClick={handleLogout}
+                    className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-red-500 to-pink-500 text-white font-semibold hover:shadow-lg hover:shadow-red-500/50 transition-all duration-300 transform hover:scale-105"
+                  >
+                    Выйти из системы
+                  </button>
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <p className="text-6xl mb-4">🔓</p>
+                  <p className="text-white/70 text-lg">Нет активной сессии</p>
+                  <p className="text-white/50 mt-2">Войдите или создайте новый аккаунт</p>
+                </div>
+              )}
             </div>
-          )}
+
+            {!useApi && session && (
+              <div className="mt-6 pt-6 border-t border-white/10">
+                <p className="text-xs text-white/60 font-semibold mb-3">💾 Локальное хранилище</p>
+                <p className="text-xs text-white/50">Используется локальное хранилище браузера. Данные синхронизируются с сервером при подключении.</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
