@@ -92,6 +92,18 @@ async function fetchClasses() {
   return res.json();
 }
 
+async function fetchWorkoutTemplates() {
+  const res = await apiFetch(`${API_BASE}/workout-templates`);
+  if (!res.ok) throw new Error('API fetch failed');
+  return res.json();
+}
+
+async function fetchWorkoutTemplate(id) {
+  const res = await apiFetch(`${API_BASE}/workout-templates/${id}`);
+  if (!res.ok) throw new Error('API fetch failed');
+  return res.json();
+}
+
 async function createClass(cls) {
   const res = await apiFetch(`${API_BASE}/classes`, {
     method: 'POST',
@@ -463,7 +475,7 @@ async function fetchAnalytics() {
 
 export { isApiAvailable, fetchMembers, createMember, updateMember, deleteMember,
   fetchTrainers, createTrainer, updateTrainer, deleteTrainer,
-  fetchClasses, createClass, updateClass, deleteClass,
+  fetchClasses, createClass, updateClass, deleteClass, fetchWorkoutTemplates, fetchWorkoutTemplate,
   fetchBookings, createBooking, updateBooking, deleteBooking,
   fetchPayments, createPayment, updatePayment, deletePayment,
   registerUser, loginUser, logoutUser, fetchMe, loginVkDemo,
