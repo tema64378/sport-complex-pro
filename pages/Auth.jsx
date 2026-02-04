@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { isApiAvailable, registerUser, loginUser, logoutUser, loginVkDemo, completeVkOneTap } from '../api';
+import { isApiAvailable, registerUser, loginUser, logoutUser, completeVkOneTap } from '../api';
 
 const DEFAULT_USERS = [
   { id: 1, name: 'Администратор', email: 'admin@sportcomplex.com', phone: '+7 (495) 123-45-67', role: 'Администратор', password: 'admin123' },
@@ -136,21 +136,7 @@ export default function Auth({ session, setSession }) {
     })();
   }
 
-  async function handleVkDemo() {
-    setMessage('');
-    try {
-      const res = await loginVkDemo();
-      try { localStorage.setItem('auth_token', res.token); } catch (e) {}
-      const nextSession = { ...res.user, loginAt: new Date().toISOString() };
-      setSession(nextSession);
-      saveSession(nextSession);
-      setMessage('Вход через VK (демо) выполнен.');
-    } catch (e) {
-      setMessage('VK-демо вход недоступен.');
-    }
-  }
-
-  function handleVkOAuth() {
+  async function handleVkOAuth() {
     const base = import.meta.env.VITE_API_BASE || '/api';
     window.location.href = `${base}/auth/vk/login`;
   }
@@ -274,13 +260,6 @@ export default function Auth({ session, setSession }) {
                     <span className="px-2 bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 text-white/60">или</span>
                   </div>
                 </div>
-
-                <button 
-                  onClick={handleVkDemo}
-                  className="w-full py-3 px-4 rounded-xl border-2 border-blue-400 text-blue-300 font-semibold hover:bg-blue-400/10 transition-all duration-300"
-                >
-                  ВКонтакте (демо)
-                </button>
 
                 <button 
                   onClick={handleVkOAuth}
