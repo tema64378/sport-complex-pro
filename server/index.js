@@ -169,24 +169,43 @@ app.post('/api/auth/vk-demo', async (req, res) => {
 
 app.post('/api/auth/vk/complete', async (req, res) => {
   const payload = req.body || {};
-  const accessToken = payload.access_token || payload.accessToken || payload.token;
+  let accessToken = payload.access_token || payload.accessToken || payload.token;
+  const code = payload.code;
+  const deviceId = payload.device_id || payload.deviceId;
   try {
     let userInfo = payload.user || payload.user_info;
+    if (!userInfo && code && process.env.VK_CLIENT_ID && process.env.VK_CLIENT_SECRET && process.env.VK_REDIRECT_URI) {
+      const params = new URLSearchParams({
+        client_id: process.env.VK_CLIENT_ID,
+        client_secret: process.env.VK_CLIENT_SECRET,
+        redirect_uri: process.env.VK_REDIRECT_URI,
+        code: code,
+      });
+      const tokenRes = await httpsJsonRequest({
+        hostname: 'oauth.vk.ru',
+        path: `/access_token?${params.toString()}`,
+        method: 'GET',
+      });
+      if (tokenRes?.data?.access_token) {
+        accessToken = tokenRes.data.access_token;
+        if (tokenRes.data.email) payload.email = tokenRes.data.email;
+      }
+    }
     if (!userInfo && accessToken) {
       const query = `/method/users.get?access_token=${encodeURIComponent(accessToken)}&v=5.131&fields=photo_200,domain`;
-      const vkRes = await httpsJsonRequest({ hostname: 'api.vk.com', path: query, method: 'GET' });
+      const vkRes = await httpsJsonRequest({ hostname: 'api.vk.ru', path: query, method: 'GET' });
       userInfo = Array.isArray(vkRes.data?.response) ? vkRes.data.response[0] : null;
     }
     if (!userInfo) {
       // Demo fallback for One Tap without access_token
       userInfo = {
-        id: payload.device_id || Date.now(),
+        id: deviceId || Date.now(),
         first_name: 'VK',
         last_name: 'Пользователь',
       };
     }
 
-    const vkId = userInfo.id || userInfo.user_id || userInfo.uid || payload.device_id || Date.now();
+    const vkId = userInfo.id || userInfo.user_id || userInfo.uid || deviceId || Date.now();
     const fullName = `${userInfo.first_name || ''} ${userInfo.last_name || ''}`.trim() || 'VK Пользователь';
     const email = payload.email || userInfo.email || `vk_${vkId}@vk.com`;
 
