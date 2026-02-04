@@ -170,17 +170,23 @@ app.post('/api/auth/vk-demo', async (req, res) => {
 app.post('/api/auth/vk/complete', async (req, res) => {
   const payload = req.body || {};
   const accessToken = payload.access_token || payload.accessToken || payload.token;
-  if (!accessToken) return res.status(400).json({ error: 'Missing access token' });
   try {
     let userInfo = payload.user || payload.user_info;
-    if (!userInfo) {
+    if (!userInfo && accessToken) {
       const query = `/method/users.get?access_token=${encodeURIComponent(accessToken)}&v=5.131&fields=photo_200,domain`;
       const vkRes = await httpsJsonRequest({ hostname: 'api.vk.com', path: query, method: 'GET' });
       userInfo = Array.isArray(vkRes.data?.response) ? vkRes.data.response[0] : null;
     }
-    if (!userInfo) return res.status(400).json({ error: 'VK user not found' });
+    if (!userInfo) {
+      // Demo fallback for One Tap without access_token
+      userInfo = {
+        id: payload.device_id || Date.now(),
+        first_name: 'VK',
+        last_name: 'Пользователь',
+      };
+    }
 
-    const vkId = userInfo.id || userInfo.user_id || userInfo.uid;
+    const vkId = userInfo.id || userInfo.user_id || userInfo.uid || payload.device_id || Date.now();
     const fullName = `${userInfo.first_name || ''} ${userInfo.last_name || ''}`.trim() || 'VK Пользователь';
     const email = payload.email || userInfo.email || `vk_${vkId}@vk.com`;
 
