@@ -216,6 +216,22 @@ app.post('/api/auth/vk/complete', async (req, res) => {
         if (tokenRes.data.email) payload.email = tokenRes.data.email;
       }
     }
+    if (!userInfo && accessToken && process.env.VK_CLIENT_ID) {
+      const infoRes = await httpsJsonRequest({
+        hostname: 'id.vk.com',
+        path: `/oauth2/user_info?client_id=${encodeURIComponent(process.env.VK_CLIENT_ID)}`,
+        method: 'GET',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (infoRes?.data?.user) {
+        userInfo = {
+          id: infoRes.data.user.user_id,
+          first_name: infoRes.data.user.first_name,
+          last_name: infoRes.data.user.last_name,
+          email: infoRes.data.user.email,
+        };
+      }
+    }
     if (!userInfo && accessToken) {
       const query = `/method/users.get?access_token=${encodeURIComponent(accessToken)}&v=5.131&fields=photo_200,domain`;
       const vkRes = await httpsJsonRequest({ hostname: 'api.vk.com', path: query, method: 'GET' });
@@ -247,6 +263,11 @@ app.post('/api/auth/vk/complete', async (req, res) => {
         'INSERT INTO members (name,email,phone,membership,joinDate,status) VALUES (?,?,?,?,?,?)',
         [user.name, user.email, '', 'Базовый', new Date().toISOString().slice(0, 10), 'Активный']
       );
+    } else if (fullName && fullName !== user.name) {
+      await pool.query('UPDATE users SET name = ? WHERE id = ?', [fullName, user.id]);
+      await pool.query('UPDATE members SET name = ? WHERE email = ?', [fullName, user.email]);
+      const [rows] = await pool.query('SELECT * FROM users WHERE id = ?', [user.id]);
+      user = rows[0];
     }
 
     const token = generateToken();
