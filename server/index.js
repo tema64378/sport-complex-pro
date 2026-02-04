@@ -48,6 +48,19 @@ function parseDate(value) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function decodeJwtPayload(token) {
+  try {
+    const parts = String(token || '').split('.');
+    if (parts.length < 2) return null;
+    const base = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base + '==='.slice((base.length + 3) % 4);
+    const json = Buffer.from(padded, 'base64').toString('utf8');
+    return JSON.parse(json);
+  } catch (e) {
+    return null;
+  }
+}
+
 function lastMonths(count = 6) {
   const now = new Date();
   const months = [];
@@ -170,10 +183,22 @@ app.post('/api/auth/vk-demo', async (req, res) => {
 app.post('/api/auth/vk/complete', async (req, res) => {
   const payload = req.body || {};
   let accessToken = payload.access_token || payload.accessToken || payload.token;
+  const idToken = payload.id_token || payload.idToken;
   const code = payload.code;
   const deviceId = payload.device_id || payload.deviceId;
   try {
     let userInfo = payload.user || payload.user_info;
+    if (!userInfo && idToken) {
+      const decoded = decodeJwtPayload(idToken);
+      if (decoded) {
+        userInfo = {
+          id: decoded.sub || decoded.user_id || decoded.id,
+          first_name: decoded.given_name || decoded.first_name || '',
+          last_name: decoded.family_name || decoded.last_name || '',
+          email: decoded.email,
+        };
+      }
+    }
     if (!userInfo && code && process.env.VK_CLIENT_ID && process.env.VK_CLIENT_SECRET && process.env.VK_REDIRECT_URI) {
       const params = new URLSearchParams({
         client_id: process.env.VK_CLIENT_ID,

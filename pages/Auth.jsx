@@ -192,7 +192,8 @@ export default function Auth({ session, setSession }) {
         try {
           const code = payload.code;
           const deviceId = payload.device_id;
-          const res = await completeVkOneTap({ code, device_id: deviceId, user: payload.user || null });
+          const data = await VKID.Auth.exchangeCode(code, deviceId);
+          const res = await completeVkOneTap({ ...data, code, device_id: deviceId, user: payload.user || null });
           try { localStorage.setItem('auth_token', res.token); } catch (e) {}
           const nextSession = { ...res.user, loginAt: new Date().toISOString() };
           setSession(nextSession);
