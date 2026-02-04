@@ -218,7 +218,7 @@ app.post('/api/auth/vk/complete', async (req, res) => {
     }
     if (!userInfo && accessToken) {
       const query = `/method/users.get?access_token=${encodeURIComponent(accessToken)}&v=5.131&fields=photo_200,domain`;
-      const vkRes = await httpsJsonRequest({ hostname: 'api.vk.ru', path: query, method: 'GET' });
+      const vkRes = await httpsJsonRequest({ hostname: 'api.vk.com', path: query, method: 'GET' });
       userInfo = Array.isArray(vkRes.data?.response) ? vkRes.data.response[0] : null;
     }
     if (!userInfo) {
