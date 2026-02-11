@@ -177,7 +177,9 @@ function App() {
               >
                 <i className="fas fa-bars text-xl text-gray-700"></i>
               </button>
-              <h1 className="text-2xl font-bold text-gray-900">Спортивный Комплекс Pro</h1>
+              <h1 className="text-2xl font-bold text-gray-900">
+                {isMobile ? 'СК Pro' : 'Спортивный Комплекс Pro'}
+              </h1>
             </div>
             <div className="flex items-center gap-4">
               <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="p-2 hover:bg-white/40 rounded-full transition-colors">
