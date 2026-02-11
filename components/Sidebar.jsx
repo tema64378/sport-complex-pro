@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setSidebarOpen, session, onLogout }) {
+export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setSidebarOpen, session, onLogout, isMobile }) {
   const menuItems = [
     { id: 'dashboard', label: 'Главная', icon: 'fas fa-chart-line' },
     { id: 'auth', label: 'Вход/Регистрация', icon: 'fas fa-user-circle' },
@@ -45,7 +45,14 @@ export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setS
   });
 
   return (
-    <div className={`fixed left-0 top-0 h-screen transition-all duration-300 z-50 ${sidebarOpen ? 'w-64' : 'w-20'} glass-nav text-slate-800 flex flex-col`}> 
+    <>
+      {isMobile && sidebarOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+      <div className={`sidebar fixed left-0 top-0 h-screen transition-all duration-300 z-50 ${sidebarOpen ? 'w-64' : 'w-20'} ${isMobile ? (sidebarOpen ? 'translate-x-0' : '-translate-x-full') : ''} glass-nav text-slate-800 flex flex-col`}> 
       <div className="p-6 border-b border-transparent">
         <div className="flex items-center justify-between">
           {sidebarOpen && <h2 className="text-xl font-bold text-slate-900 tracking-wide">Спортивный Комплекс Pro</h2>}
@@ -88,6 +95,7 @@ export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setS
           </button>
         )}
       </div>
-    </div>
+      </div>
+    </>
   );
 }

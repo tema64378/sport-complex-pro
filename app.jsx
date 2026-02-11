@@ -21,6 +21,7 @@ import Client from './pages/Client';
 function App() {
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 1024);
   const [session, setSession] = useState(() => {
     try {
       const raw = localStorage.getItem('auth_session');
@@ -41,6 +42,17 @@ function App() {
     document.documentElement.setAttribute('data-theme', theme);
     try { localStorage.setItem('theme', theme); } catch(e){}
   }, [theme]);
+
+  useEffect(() => {
+    const onResize = () => {
+      const mobile = window.innerWidth <= 1024;
+      setIsMobile(mobile);
+      if (mobile) setSidebarOpen(false);
+    };
+    onResize();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -144,7 +156,7 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen">
+    <div className="app-shell flex h-screen">
       <Sidebar 
         currentPage={currentPage} 
         setCurrentPage={setCurrentPage}
@@ -152,8 +164,9 @@ function App() {
         setSidebarOpen={setSidebarOpen}
         session={session}
         onLogout={handleLogout}
+        isMobile={isMobile}
       />
-      <div className={`flex-1 overflow-auto transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-20'}`}>
+      <div className={`app-content flex-1 overflow-auto transition-all duration-300 ${sidebarOpen && !isMobile ? 'ml-64' : sidebarOpen && isMobile ? 'ml-0' : 'ml-0'}`}>
         <header className="sticky top-0 z-40">
           <div className="topbar p-4 px-6 shadow-sm border-b border-transparent">
             <div className="flex items-center justify-between">
