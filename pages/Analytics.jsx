@@ -20,6 +20,9 @@ const fallback = {
   classAttendance: [],
   membershipDistribution: [],
   peakHours: [],
+  topServices: [],
+  topTrainers: [],
+  revenueByService: [],
 };
 
 export default function Analytics() {
@@ -37,6 +40,9 @@ export default function Analytics() {
           classAttendance: res.classAttendance || [],
           membershipDistribution: res.membershipDistribution || [],
           peakHours: res.peakHours || [],
+          topServices: res.topServices || [],
+          topTrainers: res.topTrainers || [],
+          revenueByService: res.revenueByService || [],
         });
       } catch (e) {}
     })();
@@ -49,6 +55,30 @@ export default function Analytics() {
         { name: 'Премиум', value: 0, color: '#16a34a' },
         { name: 'Стандарт', value: 0, color: '#059669' },
         { name: 'Базовый', value: 0, color: '#22c55e' },
+      ];
+
+  const topServices = data.topServices.length
+    ? data.topServices
+    : [
+        { name: 'Персональная тренировка', sales: 0 },
+        { name: 'Бассейн', sales: 0 },
+        { name: 'Теннисный корт', sales: 0 },
+      ];
+
+  const topTrainers = data.topTrainers.length
+    ? data.topTrainers
+    : [
+        { name: 'Светлана Смирнова', sessions: 0 },
+        { name: 'Иван Иванов', sessions: 0 },
+        { name: 'Мария Кузнецова', sessions: 0 },
+      ];
+
+  const revenueByService = data.revenueByService.length
+    ? data.revenueByService
+    : [
+        { name: 'Тренажёрный зал', revenue: 0 },
+        { name: 'Персональные', revenue: 0 },
+        { name: 'Группы', revenue: 0 },
       ];
 
   return (
@@ -145,6 +175,43 @@ export default function Analytics() {
             <Line type="monotone" dataKey="members" stroke="#16a34a" strokeWidth={2} dot={{ fill: '#16a34a', r: 4 }} />
           </LineChart>
         </ResponsiveContainer>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="glass-card p-6">
+          <h2 className="text-lg font-bold text-slate-900 mb-4">Топ услуг</h2>
+          <div className="space-y-3">
+            {topServices.map((s, idx) => (
+              <div key={idx} className="flex items-center justify-between">
+                <span className="text-slate-400">{s.name}</span>
+                <span className="text-slate-900 font-semibold">{s.sales}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="glass-card p-6">
+          <h2 className="text-lg font-bold text-slate-900 mb-4">Топ тренеров</h2>
+          <div className="space-y-3">
+            {topTrainers.map((t, idx) => (
+              <div key={idx} className="flex items-center justify-between">
+                <span className="text-slate-400">{t.name}</span>
+                <span className="text-slate-900 font-semibold">{t.sessions}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="glass-card p-6">
+          <h2 className="text-lg font-bold text-slate-900 mb-4">Доход по услугам</h2>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={revenueByService}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey="name" stroke="#6b7280" />
+              <YAxis stroke="#6b7280" />
+              <Tooltip contentStyle={{ backgroundColor: '#111827', border: 'none', borderRadius: '8px', color: '#fff' }} />
+              <Bar dataKey="revenue" fill="#16a34a" radius={[8, 8, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
     </div>
   );

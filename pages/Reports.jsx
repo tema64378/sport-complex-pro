@@ -8,6 +8,8 @@ export default function Reports() {
   const [payments, setPayments] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [serviceReport, setServiceReport] = useState([]);
+  const [retentionReport, setRetentionReport] = useState([]);
 
   const [memberFilters, setMemberFilters] = useState({ membership: '', status: '' });
   const [paymentFilters, setPaymentFilters] = useState({ status: '' });
@@ -15,6 +17,8 @@ export default function Reports() {
 
   useEffect(() => {
     loadSummary();
+    loadServiceReport();
+    loadRetentionReport();
   }, []);
 
   async function loadSummary() {
@@ -64,15 +68,53 @@ export default function Reports() {
     downloadCsvReport(type, filters);
   };
 
+  function loadServiceReport() {
+    try {
+      const raw = localStorage.getItem('receipts');
+      const receipts = raw ? JSON.parse(raw) : [];
+      const totals = {};
+      receipts.forEach(r => {
+        (r.items || []).forEach(item => {
+          totals[item.name] = (totals[item.name] || 0) + (item.price * item.qty);
+        });
+      });
+      const rows = Object.entries(totals)
+        .map(([name, revenue]) => ({ name, revenue }))
+        .sort((a, b) => b.revenue - a.revenue);
+      setServiceReport(rows);
+    } catch (e) {
+      setServiceReport([]);
+    }
+  }
+
+  function loadRetentionReport() {
+    try {
+      const raw = localStorage.getItem('members');
+      const members = raw ? JSON.parse(raw) : [];
+      const total = members.length;
+      const active = members.filter(m => m.status === 'Активный').length;
+      const inactive = total - active;
+      const rate = total ? Math.round((active / total) * 100) : 0;
+      setRetentionReport([
+        { label: 'Всего клиентов', value: total },
+        { label: 'Активные', value: active },
+        { label: 'Неактивные', value: inactive },
+        { label: 'Удержание', value: `${rate}%` },
+      ]);
+    } catch (e) {
+      setRetentionReport([]);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div><h1 className="text-3xl font-bold">Отчеты и Аналитика</h1><p className="text-gray-600">Просмотр, фильтрация и скачивание отчетов из базы данных</p></div>
 
       {/* Tabs */}
       <div className="flex gap-2 border-b">
-        {['summary', 'members', 'payments', 'bookings'].map(tab => (
+        {['summary', 'members', 'payments', 'bookings', 'services', 'retention'].map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 font-medium border-b-2 transition ${activeTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-600 hover:text-gray-900'}`}>
-            {tab === 'summary' ? 'Сводка' : tab === 'members' ? 'Клиенты' : tab === 'payments' ? 'Платежи' : 'Бронирования'}
+            {tab === 'summary' ? 'Сводка' : tab === 'members' ? 'Клиенты' : tab === 'payments' ? 'Платежи' : tab === 'bookings' ? 'Бронирования' : tab === 'services' ? 'Услуги' : 'Удержание'}
           </button>
         ))}
       </div>
@@ -128,6 +170,42 @@ export default function Reports() {
             <table className="w-full"><thead className="bg-white/5"><tr><th className="p-3 text-left">Клиент</th><th className="p-3 text-left">Тренировка</th><th className="p-3 text-left">Дата</th><th className="p-3 text-left">Время</th><th className="p-3 text-left">Статус</th></tr></thead><tbody>{bookings.map(b => (<tr key={b.id} className="border-t hover:bg-white/5"><td className="p-3">{b.member}</td><td className="p-3">{b.className}</td><td className="p-3">{b.date}</td><td className="p-3">{b.time}</td><td className="p-3">{b.status}</td></tr>))}</tbody></table>
             {bookings.length === 0 && <div className="p-4 text-center text-slate-400">Данные не загружены. Примените фильтры.</div>}
           </div>
+        </div>
+      )}
+
+      {activeTab === 'services' && (
+        <div className="space-y-4">
+          <div className="glass-card overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-white/5">
+                <tr>
+                  <th className="p-3 text-left">Услуга</th>
+                  <th className="p-3 text-left">Выручка</th>
+                </tr>
+              </thead>
+              <tbody>
+                {serviceReport.map((s, idx) => (
+                  <tr key={idx} className="border-t hover:bg-white/5">
+                    <td className="p-3">{s.name}</td>
+                    <td className="p-3">₽{Number(s.revenue || 0).toLocaleString('ru-RU')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {serviceReport.length === 0 && <div className="p-4 text-center text-slate-400">Нет данных по услугам.</div>}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'retention' && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {retentionReport.map((r, idx) => (
+            <div key={idx} className="glass-card p-6">
+              <p className="text-slate-400 text-sm">{r.label}</p>
+              <p className="text-2xl font-bold text-slate-900 mt-2">{r.value}</p>
+            </div>
+          ))}
+          {retentionReport.length === 0 && <div className="glass-card p-6 text-slate-400">Нет данных.</div>}
         </div>
       )}
     </div>

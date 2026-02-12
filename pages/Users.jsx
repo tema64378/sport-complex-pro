@@ -7,6 +7,62 @@ const ROLE_OPTIONS = [
   { value: 'Клиент', label: '👤 Клиент', color: '#16a34a' }
 ];
 
+const PERMISSIONS = [
+  { id: 'dashboard', label: 'Главная' },
+  { id: 'members', label: 'Клиенты' },
+  { id: 'trainers', label: 'Тренеры' },
+  { id: 'memberships', label: 'Абонементы' },
+  { id: 'classes', label: 'Тренировки' },
+  { id: 'bookings', label: 'Бронирования' },
+  { id: 'calendar', label: 'Календарь' },
+  { id: 'payments', label: 'Платежи' },
+  { id: 'services', label: 'Услуги и чек' },
+  { id: 'analytics', label: 'Аналитика' },
+  { id: 'reports', label: 'Отчеты' },
+  { id: 'notifications', label: 'Уведомления' },
+  { id: 'crm', label: 'CRM' },
+];
+
+function loadRolePerms() {
+  try {
+    const raw = localStorage.getItem('role_permissions');
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return {
+    Администратор: PERMISSIONS.reduce((acc, p) => ({ ...acc, [p.id]: true }), {}),
+    Тренер: {
+      dashboard: true,
+      members: true,
+      trainers: false,
+      memberships: true,
+      classes: true,
+      bookings: true,
+      calendar: true,
+      payments: true,
+      services: true,
+      analytics: true,
+      reports: false,
+      notifications: true,
+      crm: true,
+    },
+    Клиент: {
+      dashboard: true,
+      members: false,
+      trainers: false,
+      memberships: false,
+      classes: false,
+      bookings: true,
+      calendar: false,
+      payments: true,
+      services: true,
+      analytics: false,
+      reports: false,
+      notifications: true,
+      crm: false,
+    },
+  };
+}
+
 export default function Users() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -16,6 +72,7 @@ export default function Users() {
   const [edits, setEdits] = useState({});
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRole, setFilterRole] = useState('all');
+  const [rolePerms, setRolePerms] = useState(loadRolePerms());
 
   const emailSet = useMemo(() => new Set(users.map(u => u.email)), [users]);
   
@@ -31,6 +88,10 @@ export default function Users() {
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem('role_permissions', JSON.stringify(rolePerms)); } catch (e) {}
+  }, [rolePerms]);
 
   async function load() {
     setLoading(true);
@@ -99,6 +160,16 @@ export default function Users() {
   const getRoleColor = (role) => {
     const option = ROLE_OPTIONS.find(o => o.value === role);
     return option?.color || '#16a34a';
+  };
+
+  const togglePermission = (role, permId) => {
+    setRolePerms(prev => ({
+      ...prev,
+      [role]: {
+        ...prev[role],
+        [permId]: !prev[role]?.[permId],
+      },
+    }));
   };
 
   return (
@@ -234,6 +305,40 @@ export default function Users() {
           <option value="all">Все роли</option>
           {ROLE_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
         </select>
+      </div>
+
+      <div className="glass-card p-6">
+        <h2 className="text-xl font-bold mb-4" style={{ color: 'var(--text-primary)' }}>🔐 Матрица прав доступа</h2>
+        <div className="overflow-auto">
+          <table className="w-full">
+            <thead className="bg-white/5">
+              <tr>
+                <th className="p-3 text-left">Раздел</th>
+                {ROLE_OPTIONS.map(r => (
+                  <th key={r.value} className="p-3 text-left">{r.value}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {PERMISSIONS.map(p => (
+                <tr key={p.id} className="border-t hover:bg-white/5">
+                  <td className="p-3">{p.label}</td>
+                  {ROLE_OPTIONS.map(r => (
+                    <td key={r.value} className="p-3">
+                      <button
+                        onClick={() => togglePermission(r.value, p.id)}
+                        className={`px-3 py-1 rounded text-sm ${rolePerms?.[r.value]?.[p.id] ? 'bg-emerald-600 text-white' : 'bg-white/5 text-slate-400'}`}
+                      >
+                        {rolePerms?.[r.value]?.[p.id] ? 'Разрешено' : 'Запрещено'}
+                      </button>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-xs text-slate-400 mt-3">Матрица демонстрационная. Для реального контроля нужно связать с сервером.</p>
       </div>
 
       {/* Таблица пользователей */}

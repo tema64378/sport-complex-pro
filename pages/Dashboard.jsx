@@ -25,6 +25,7 @@ const fallback = {
 export default function Dashboard() {
   const [data, setData] = useState(fallback);
   const [classes, setClasses] = useState([]);
+  const [notifications, setNotifications] = useState([]);
 
   useEffect(() => {
     let mounted = true;
@@ -47,6 +48,14 @@ export default function Dashboard() {
         setClasses(list.slice(0, 4));
       } catch (e) {}
     })();
+    try {
+      const raw = localStorage.getItem('notifications');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (!mounted) return;
+        setNotifications(parsed.slice(0, 3));
+      }
+    } catch (e) {}
     return () => { mounted = false; };
   }, []);
 
@@ -174,6 +183,24 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div className="glass-card p-6">
+        <h2 className="text-lg font-bold text-slate-900 mb-4">Последние уведомления</h2>
+        <div className="space-y-3">
+          {notifications.map((n) => (
+            <div key={n.id} className="flex items-center justify-between p-3 rounded bg-white/5">
+              <div>
+                <div className="text-xs text-slate-400">{n.type} • {n.createdAt}</div>
+                <div className="text-slate-900 font-medium">{n.title}</div>
+              </div>
+              <span className={`text-xs px-2 py-1 rounded ${n.read ? 'bg-white/10 text-slate-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                {n.read ? 'Прочитано' : 'Новое'}
+              </span>
+            </div>
+          ))}
+          {notifications.length === 0 && <p className="text-sm text-slate-400">Уведомлений пока нет.</p>}
         </div>
       </div>
     </div>

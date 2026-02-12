@@ -17,6 +17,10 @@ import Deals from './pages/Deals';
 import Forecast from './pages/Forecast';
 import Search from './pages/Search';
 import Client from './pages/Client';
+import Notifications from './pages/Notifications';
+import Memberships from './pages/Memberships';
+import Calendar from './pages/Calendar';
+import Crm from './pages/Crm';
 
 function App() {
   const [currentPage, setCurrentPage] = useState('dashboard');
@@ -79,12 +83,16 @@ function App() {
   const roleAccess = {
     dashboard: ['Администратор', 'Тренер', 'Клиент'],
     auth: ['Администратор', 'Тренер', 'Клиент'],
+    notifications: ['Администратор', 'Тренер', 'Клиент'],
     client: ['Клиент'],
     members: ['Администратор', 'Тренер'],
     trainers: ['Администратор'],
+    memberships: ['Администратор', 'Тренер'],
     classes: ['Администратор', 'Тренер'],
     bookings: ['Администратор', 'Тренер', 'Клиент'],
+    calendar: ['Администратор', 'Тренер'],
     services: ['Администратор', 'Тренер', 'Клиент'],
+    crm: ['Администратор', 'Тренер'],
     deals: ['Администратор', 'Тренер'],
     payments: ['Администратор', 'Тренер', 'Клиент'],
     analytics: ['Администратор', 'Тренер'],
@@ -114,12 +122,18 @@ function App() {
         return <Members />;
       case 'trainers':
         return <Trainers />;
+      case 'memberships':
+        return <Memberships />;
       case 'classes':
         return <Classes />;
       case 'bookings':
         return <Bookings />;
+      case 'calendar':
+        return <Calendar />;
       case 'payments':
         return <Payments />;
+      case 'notifications':
+        return <Notifications />;
       case 'analytics':
         return <Analytics />;
       case 'reports':
@@ -132,6 +146,8 @@ function App() {
         return <Auth session={session} setSession={setSession} />;
       case 'services':
         return <Services />;
+      case 'crm':
+        return <Crm />;
       case 'deals':
         return <Deals />;
       case 'forecast':
