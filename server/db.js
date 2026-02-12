@@ -117,6 +117,51 @@ async function init() {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      type VARCHAR(64),
+      title VARCHAR(255),
+      message TEXT,
+      createdAt VARCHAR(64),
+      isRead TINYINT(1) DEFAULT 0,
+      refType VARCHAR(64),
+      refId VARCHAR(64)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS membership_plans (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(128),
+      price INT,
+      period VARCHAR(64),
+      visits VARCHAR(64),
+      perksJson TEXT
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS crm_notes (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      memberId INT,
+      text TEXT,
+      createdAt VARCHAR(64)
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS calendar_slots (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      date VARCHAR(32),
+      time VARCHAR(32),
+      className VARCHAR(255),
+      trainer VARCHAR(255),
+      capacity INT,
+      booked INT
+    )
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS receipts (
       id INT AUTO_INCREMENT PRIMARY KEY,
       memberId INT,
@@ -255,6 +300,49 @@ async function init() {
       ['Теннисный корт', 'Спорт', 1200, 'час', 'Аренда корта и инвентаря']);
     await pool.query('INSERT INTO services (name,category,price,unit,description) VALUES (?,?,?,?,?)',
       ['Групповое занятие', 'Группы', 500, 'занятие', 'Йога, пилатес, функционал']);
+  }
+
+  const [[plansCnt]] = await pool.query('SELECT COUNT(*) AS cnt FROM membership_plans');
+  if (plansCnt.cnt === 0) {
+    const plans = [
+      ['Базовый', 1990, 'месяц', '8', JSON.stringify(['Тренажёрный зал', 'Групповые занятия'])],
+      ['Стандарт', 3490, 'месяц', '16', JSON.stringify(['Зал + бассейн', 'Группы', '1 консультация тренера'])],
+      ['Премиум', 5990, 'месяц', 'Безлимит', JSON.stringify(['Все зоны', '2 персональные тренировки', 'Приоритет бронирования'])],
+    ];
+    for (const plan of plans) {
+      await pool.query('INSERT INTO membership_plans (name,price,period,visits,perksJson) VALUES (?,?,?,?,?)', plan);
+    }
+  }
+
+  const [[slotsCnt]] = await pool.query('SELECT COUNT(*) AS cnt FROM calendar_slots');
+  if (slotsCnt.cnt === 0) {
+    const slots = [
+      ['2026-02-11', '10:00', 'Йога', 'Светлана Смирнова', 16, 12],
+      ['2026-02-11', '12:00', 'Кроссфит', 'Иван Иванов', 12, 12],
+      ['2026-02-12', '09:00', 'Пилатес', 'Мария Кузнецова', 14, 7],
+      ['2026-02-13', '19:00', 'Силовая', 'Антон Морозов', 10, 8],
+    ];
+    for (const slot of slots) {
+      await pool.query('INSERT INTO calendar_slots (date,time,className,trainer,capacity,booked) VALUES (?,?,?,?,?,?)', slot);
+    }
+  }
+
+  const [[notesCnt]] = await pool.query('SELECT COUNT(*) AS cnt FROM crm_notes');
+  if (notesCnt.cnt === 0) {
+    await pool.query('INSERT INTO crm_notes (memberId,text,createdAt) VALUES (?,?,?)', [1, 'Предпочитает тренировки утром', '2026-02-01']);
+    await pool.query('INSERT INTO crm_notes (memberId,text,createdAt) VALUES (?,?,?)', [2, 'Аллергия на латекс — избегать резинок', '2026-02-05']);
+  }
+
+  const [[notificationsCnt]] = await pool.query('SELECT COUNT(*) AS cnt FROM notifications');
+  if (notificationsCnt.cnt === 0) {
+    await pool.query(
+      'INSERT INTO notifications (type,title,message,createdAt,isRead,refType,refId) VALUES (?,?,?,?,?,?,?)',
+      ['Оплата', 'Просрочен платёж', 'Клиент Мария Иванова: счёт на 1 500 ₽ просрочен на 2 дня', '2026-02-10 11:20', 0, 'payment', '1']
+    );
+    await pool.query(
+      'INSERT INTO notifications (type,title,message,createdAt,isRead,refType,refId) VALUES (?,?,?,?,?,?,?)',
+      ['Тренировка', 'Напоминание', 'Тренировка "Йога для начинающих" через 2 часа', '2026-02-10 09:10', 0, 'booking', '1']
+    );
   }
 
   const [[dealsCnt]] = await pool.query('SELECT COUNT(*) AS cnt FROM deals');

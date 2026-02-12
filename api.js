@@ -212,6 +212,119 @@ async function createMockPaymentLink(payload) {
   return res.json();
 }
 
+// Notifications
+async function fetchNotifications() {
+  const res = await apiFetch(`${API_BASE}/notifications`);
+  if (!res.ok) throw new Error('API fetch failed');
+  return res.json();
+}
+
+async function createNotification(payload) {
+  const res = await apiFetch(`${API_BASE}/notifications`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('API create failed');
+  return res.json();
+}
+
+async function updateNotification(id, payload) {
+  const res = await apiFetch(`${API_BASE}/notifications/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('API update failed');
+  return res.json();
+}
+
+async function deleteNotification(id) {
+  const res = await apiFetch(`${API_BASE}/notifications/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('API delete failed');
+  return res.json();
+}
+
+// Membership plans
+async function fetchMemberships() {
+  const res = await apiFetch(`${API_BASE}/memberships`);
+  if (!res.ok) throw new Error('API fetch failed');
+  return res.json();
+}
+
+async function createMembership(payload) {
+  const res = await apiFetch(`${API_BASE}/memberships`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('API create failed');
+  return res.json();
+}
+
+async function updateMembership(id, payload) {
+  const res = await apiFetch(`${API_BASE}/memberships/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('API update failed');
+  return res.json();
+}
+
+async function deleteMembership(id) {
+  const res = await apiFetch(`${API_BASE}/memberships/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('API delete failed');
+  return res.json();
+}
+
+// CRM notes
+async function fetchCrmNotes(memberId) {
+  const url = memberId ? `${API_BASE}/crm/notes?memberId=${memberId}` : `${API_BASE}/crm/notes`;
+  const res = await apiFetch(url);
+  if (!res.ok) throw new Error('API fetch failed');
+  return res.json();
+}
+
+async function createCrmNote(payload) {
+  const res = await apiFetch(`${API_BASE}/crm/notes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('API create failed');
+  return res.json();
+}
+
+async function deleteCrmNote(id) {
+  const res = await apiFetch(`${API_BASE}/crm/notes/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('API delete failed');
+  return res.json();
+}
+
+// Calendar slots
+async function fetchCalendarSlots() {
+  const res = await apiFetch(`${API_BASE}/calendar/slots`);
+  if (!res.ok) throw new Error('API fetch failed');
+  return res.json();
+}
+
+async function createCalendarSlot(payload) {
+  const res = await apiFetch(`${API_BASE}/calendar/slots`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('API create failed');
+  return res.json();
+}
+
+async function deleteCalendarSlot(id) {
+  const res = await apiFetch(`${API_BASE}/calendar/slots/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('API delete failed');
+  return res.json();
+}
+
 async function createYooKassaPayment(payload) {
   const res = await apiFetch(`${API_BASE}/payments/yookassa/create`, {
     method: 'POST',
@@ -484,4 +597,8 @@ export { isApiAvailable, fetchMembers, createMember, updateMember, deleteMember,
   fetchMembersReport, fetchPaymentsReport, fetchBookingsReport, fetchSummary, downloadCsvReport,
   fetchPaymentProviders, createMockPaymentLink,
   createYooKassaPayment, createTinkoffInit, createTinkoffSbpQr, createTinkoffSberpayQr,
-  fetchUsers, createUser, updateUser, fetchAnalytics, completeVkOneTap };
+  fetchUsers, createUser, updateUser, fetchAnalytics, completeVkOneTap,
+  fetchNotifications, createNotification, updateNotification, deleteNotification,
+  fetchMemberships, createMembership, updateMembership, deleteMembership,
+  fetchCrmNotes, createCrmNote, deleteCrmNote,
+  fetchCalendarSlots, createCalendarSlot, deleteCalendarSlot };

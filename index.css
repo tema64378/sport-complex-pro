@@ -327,7 +327,7 @@ button:focus-visible {
 
 .bg-blue-600,
 .bg-emerald-600,
-.bg-green-600 {
+.bg-blue-600 {
   background-color: var(--accent) !important;
 }
 .hover\\:bg-blue-700:hover,
@@ -336,7 +336,7 @@ button:focus-visible {
 }
 .text-blue-600,
 .text-blue-500,
-.text-green-600 {
+.text-blue-600 {
   color: var(--accent) !important;
 }
 .border-blue-500 {

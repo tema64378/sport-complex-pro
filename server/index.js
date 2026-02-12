@@ -79,6 +79,69 @@ function monthKey(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
 
+function parseDateTime(dateStr, timeStr) {
+  if (!dateStr) return null;
+  const time = timeStr || '00:00';
+  const iso = `${dateStr}T${time}`;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+async function ensureNotification({ type, title, message, refType, refId }) {
+  if (!refType || !refId) return;
+  const [rows] = await pool.query(
+    'SELECT id FROM notifications WHERE refType = ? AND refId = ? LIMIT 1',
+    [refType, String(refId)]
+  );
+  if (rows[0]) return;
+  await pool.query(
+    'INSERT INTO notifications (type,title,message,createdAt,isRead,refType,refId) VALUES (?,?,?,?,?,?,?)',
+    [type, title, message, new Date().toISOString().slice(0, 16).replace('T', ' '), 0, refType, String(refId)]
+  );
+}
+
+async function generateNotifications() {
+  try {
+    const [payments] = await pool.query('SELECT * FROM payments');
+    const [bookings] = await pool.query('SELECT * FROM bookings');
+    const now = new Date();
+
+    for (const p of payments) {
+      const payDate = parseDate(p.date);
+      if (!payDate) continue;
+      if (String(p.status || '').toLowerCase() === 'оплачен') continue;
+      if (payDate < new Date(now.toISOString().slice(0, 10))) {
+        await ensureNotification({
+          type: 'Оплата',
+          title: 'Просрочен платёж',
+          message: `Клиент ${p.member}: счёт на ${Number(p.amount || 0).toLocaleString('ru-RU')} ₽ просрочен`,
+          refType: 'payment',
+          refId: p.id,
+        });
+      }
+    }
+
+    const twoHours = 1000 * 60 * 60 * 2;
+    for (const b of bookings) {
+      if (String(b.status || '').toLowerCase() !== 'подтверждено') continue;
+      const dt = parseDateTime(b.date, b.time);
+      if (!dt) continue;
+      const diff = dt.getTime() - now.getTime();
+      if (diff > 0 && diff <= twoHours) {
+        await ensureNotification({
+          type: 'Тренировка',
+          title: 'Напоминание',
+          message: `Тренировка "${b.className}" через ${Math.round(diff / (1000 * 60))} мин.`,
+          refType: 'booking',
+          refId: b.id,
+        });
+      }
+    }
+  } catch (e) {
+    // ignore scheduler errors
+  }
+}
+
 async function authRequired(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
@@ -580,6 +643,121 @@ app.post('/api/payments/mock-link', authRequired, (req, res) => {
   res.json({ url, orderId, provider, description });
 });
 
+// --- Notifications ---
+app.get('/api/notifications', authRequired, async (req, res) => {
+  const [rows] = await pool.query('SELECT * FROM notifications ORDER BY id DESC');
+  res.json(rows.map(r => ({ ...r, read: !!r.isRead })));
+});
+
+app.post('/api/notifications', authRequired, requireRole(['Администратор', 'Тренер']), async (req, res) => {
+  const { type, title, message } = req.body || {};
+  if (!title || !message) return res.status(400).json({ error: 'Missing fields' });
+  const [result] = await pool.query(
+    'INSERT INTO notifications (type,title,message,createdAt,isRead,refType,refId) VALUES (?,?,?,?,?,?,?)',
+    [type || 'Система', title, message, new Date().toISOString().slice(0, 16).replace('T', ' '), 0, 'manual', String(Date.now())]
+  );
+  const [rows] = await pool.query('SELECT * FROM notifications WHERE id = ?', [result.insertId]);
+  res.status(201).json({ ...rows[0], read: !!rows[0].isRead });
+});
+
+app.patch('/api/notifications/:id', authRequired, async (req, res) => {
+  const id = req.params.id;
+  const { read } = req.body || {};
+  await pool.query('UPDATE notifications SET isRead = ? WHERE id = ?', [read ? 1 : 0, id]);
+  const [rows] = await pool.query('SELECT * FROM notifications WHERE id = ?', [id]);
+  res.json({ ...rows[0], read: !!rows[0]?.isRead });
+});
+
+app.delete('/api/notifications/:id', authRequired, requireRole(['Администратор', 'Тренер']), async (req, res) => {
+  const id = req.params.id;
+  await pool.query('DELETE FROM notifications WHERE id = ?', [id]);
+  res.json({ success: true });
+});
+
+// --- Membership plans ---
+app.get('/api/memberships', authRequired, async (req, res) => {
+  const [rows] = await pool.query('SELECT * FROM membership_plans ORDER BY id DESC');
+  const mapped = rows.map(r => ({ ...r, perks: JSON.parse(r.perksJson || '[]') }));
+  res.json(mapped);
+});
+
+app.post('/api/memberships', authRequired, requireRole(['Администратор', 'Тренер']), async (req, res) => {
+  const { name, price, period, visits, perks } = req.body || {};
+  if (!name || !price) return res.status(400).json({ error: 'Missing fields' });
+  const [result] = await pool.query(
+    'INSERT INTO membership_plans (name,price,period,visits,perksJson) VALUES (?,?,?,?,?)',
+    [name, price, period || 'месяц', visits || '—', JSON.stringify(perks || [])]
+  );
+  const [rows] = await pool.query('SELECT * FROM membership_plans WHERE id = ?', [result.insertId]);
+  res.status(201).json({ ...rows[0], perks: JSON.parse(rows[0].perksJson || '[]') });
+});
+
+app.put('/api/memberships/:id', authRequired, requireRole(['Администратор', 'Тренер']), async (req, res) => {
+  const id = req.params.id;
+  const { name, price, period, visits, perks } = req.body || {};
+  await pool.query(
+    'UPDATE membership_plans SET name=?, price=?, period=?, visits=?, perksJson=? WHERE id = ?',
+    [name, price, period, visits, JSON.stringify(perks || []), id]
+  );
+  const [rows] = await pool.query('SELECT * FROM membership_plans WHERE id = ?', [id]);
+  res.json({ ...rows[0], perks: JSON.parse(rows[0].perksJson || '[]') });
+});
+
+app.delete('/api/memberships/:id', authRequired, requireRole(['Администратор', 'Тренер']), async (req, res) => {
+  const id = req.params.id;
+  await pool.query('DELETE FROM membership_plans WHERE id = ?', [id]);
+  res.json({ success: true });
+});
+
+// --- CRM notes ---
+app.get('/api/crm/notes', authRequired, requireRole(['Администратор', 'Тренер']), async (req, res) => {
+  const memberId = req.query.memberId;
+  const [rows] = memberId
+    ? await pool.query('SELECT * FROM crm_notes WHERE memberId = ? ORDER BY id DESC', [memberId])
+    : await pool.query('SELECT * FROM crm_notes ORDER BY id DESC');
+  res.json(rows);
+});
+
+app.post('/api/crm/notes', authRequired, requireRole(['Администратор', 'Тренер']), async (req, res) => {
+  const { memberId, text, createdAt } = req.body || {};
+  if (!memberId || !text) return res.status(400).json({ error: 'Missing fields' });
+  const [result] = await pool.query(
+    'INSERT INTO crm_notes (memberId,text,createdAt) VALUES (?,?,?)',
+    [memberId, text, createdAt || new Date().toISOString().slice(0, 10)]
+  );
+  const [rows] = await pool.query('SELECT * FROM crm_notes WHERE id = ?', [result.insertId]);
+  res.status(201).json(rows[0]);
+});
+
+app.delete('/api/crm/notes/:id', authRequired, requireRole(['Администратор', 'Тренер']), async (req, res) => {
+  const id = req.params.id;
+  await pool.query('DELETE FROM crm_notes WHERE id = ?', [id]);
+  res.json({ success: true });
+});
+
+// --- Calendar slots ---
+app.get('/api/calendar/slots', authRequired, requireRole(['Администратор', 'Тренер']), async (req, res) => {
+  const [rows] = await pool.query('SELECT * FROM calendar_slots ORDER BY date ASC, time ASC');
+  res.json(rows);
+});
+
+app.post('/api/calendar/slots', authRequired, requireRole(['Администратор', 'Тренер']), async (req, res) => {
+  const { date, time, className, trainer, capacity, booked } = req.body || {};
+  if (!date || !time || !className) return res.status(400).json({ error: 'Missing fields' });
+  const [result] = await pool.query(
+    'INSERT INTO calendar_slots (date,time,className,trainer,capacity,booked) VALUES (?,?,?,?,?,?)',
+    [date, time, className, trainer || '', capacity || 0, booked || 0]
+  );
+  const [rows] = await pool.query('SELECT * FROM calendar_slots WHERE id = ?', [result.insertId]);
+  res.status(201).json(rows[0]);
+});
+
+app.delete('/api/calendar/slots/:id', authRequired, requireRole(['Администратор', 'Тренер']), async (req, res) => {
+  const id = req.params.id;
+  await pool.query('DELETE FROM calendar_slots WHERE id = ?', [id]);
+  res.json({ success: true });
+});
+
 // --- Services ---
 app.get('/api/services', authRequired, async (req, res) => {
   const [rows] = await pool.query('SELECT * FROM services ORDER BY id ASC');
@@ -956,4 +1134,8 @@ app.post('/api/payments/tinkoff/sberpay-qr', authRequired, async (req, res) => {
 });
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`API server listening on http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`API server listening on http://localhost:${PORT}`);
+  generateNotifications();
+  setInterval(generateNotifications, 15 * 60 * 1000);
+});

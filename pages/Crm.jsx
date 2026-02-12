@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { isApiAvailable, fetchMembers as apiFetchMembers, fetchBookings as apiFetchBookings, fetchPayments as apiFetchPayments, fetchCrmNotes as apiFetchCrmNotes, createCrmNote as apiCreateCrmNote, deleteCrmNote as apiDeleteCrmNote } from '../api';
 
 const seedNotes = [
   { id: 1, memberId: 1, text: 'Предпочитает тренировки утром', createdAt: '2026-02-01' },
@@ -41,25 +42,62 @@ function loadPayments() {
 }
 
 export default function Crm() {
-  const [members] = useState(loadMembers());
+  const [members, setMembers] = useState(loadMembers());
   const [notes, setNotes] = useState(loadNotes());
   const [selectedId, setSelectedId] = useState(members[0]?.id || null);
   const [noteText, setNoteText] = useState('');
-  const [bookings] = useState(loadBookings());
-  const [payments] = useState(loadPayments());
+  const [bookings, setBookings] = useState(loadBookings());
+  const [payments, setPayments] = useState(loadPayments());
+  const [useApi, setUseApi] = useState(false);
 
   useEffect(() => {
-    try { localStorage.setItem('crm_notes', JSON.stringify(notes)); } catch (e) {}
-  }, [notes]);
+    (async () => {
+      const ok = await isApiAvailable();
+      setUseApi(ok);
+      if (ok) {
+        try {
+          const [m, b, p] = await Promise.all([apiFetchMembers(), apiFetchBookings(), apiFetchPayments()]);
+          setMembers(m);
+          setBookings(b);
+          setPayments(p);
+          if (m[0]?.id) setSelectedId(m[0].id);
+        } catch (e) {}
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      if (!useApi || !selectedId) return;
+      try {
+        const remote = await apiFetchCrmNotes(selectedId);
+        setNotes(remote);
+      } catch (e) {}
+    })();
+  }, [useApi, selectedId]);
+
+  useEffect(() => {
+    if (!useApi) {
+      try { localStorage.setItem('crm_notes', JSON.stringify(notes)); } catch (e) {}
+    }
+  }, [notes, useApi]);
 
   const current = useMemo(() => members.find(m => m.id === selectedId), [members, selectedId]);
   const currentNotes = useMemo(() => notes.filter(n => n.memberId === selectedId), [notes, selectedId]);
   const currentBookings = useMemo(() => bookings.filter(b => b.member === current?.name), [bookings, current]);
   const currentPayments = useMemo(() => payments.filter(p => p.member === current?.name), [payments, current]);
 
-  function addNote() {
+  async function addNote() {
     if (!noteText.trim() || !selectedId) return;
     const item = { id: Date.now(), memberId: selectedId, text: noteText.trim(), createdAt: new Date().toISOString().slice(0, 10) };
+    if (useApi) {
+      try {
+        const saved = await apiCreateCrmNote({ memberId: selectedId, text: noteText.trim() });
+        setNotes(prev => [saved, ...prev]);
+        setNoteText('');
+        return;
+      } catch (e) {}
+    }
     setNotes(prev => [item, ...prev]);
     setNoteText('');
   }

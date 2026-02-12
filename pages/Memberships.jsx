@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { isApiAvailable, fetchMemberships as apiFetchMemberships, createMembership as apiCreateMembership, updateMembership as apiUpdateMembership, deleteMembership as apiDeleteMembership } from '../api';
 
 const seedPlans = [
   { id: 1, name: 'Базовый', price: 1990, period: 'месяц', visits: 8, perks: ['Тренажёрный зал', 'Групповые занятия'] },
@@ -18,10 +19,28 @@ export default function Memberships() {
   const [plans, setPlans] = useState(loadPlans());
   const [form, setForm] = useState({ name: '', price: '', period: 'месяц', visits: '', perks: '' });
   const [editingId, setEditingId] = useState(null);
+  const [useApi, setUseApi] = useState(false);
 
   useEffect(() => {
-    try { localStorage.setItem('membership_plans', JSON.stringify(plans)); } catch (e) {}
-  }, [plans]);
+    (async () => {
+      const ok = await isApiAvailable();
+      setUseApi(ok);
+      if (ok) {
+        try {
+          const remote = await apiFetchMemberships();
+          setPlans(remote);
+          return;
+        } catch (e) {}
+      }
+      setPlans(loadPlans());
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!useApi) {
+      try { localStorage.setItem('membership_plans', JSON.stringify(plans)); } catch (e) {}
+    }
+  }, [plans, useApi]);
 
   const stats = useMemo(() => {
     const total = plans.length;
@@ -34,7 +53,7 @@ export default function Memberships() {
     setEditingId(null);
   }
 
-  function savePlan() {
+  async function savePlan() {
     if (!form.name.trim() || !String(form.price).trim()) return alert('Название и цена обязательны.');
     const payload = {
       id: editingId || Date.now(),
@@ -44,11 +63,21 @@ export default function Memberships() {
       visits: form.visits || '—',
       perks: form.perks.split(',').map(p => p.trim()).filter(Boolean),
     };
-    if (editingId) {
-      setPlans(prev => prev.map(p => p.id === editingId ? payload : p));
-    } else {
-      setPlans(prev => [payload, ...prev]);
+    if (useApi) {
+      try {
+        if (editingId) {
+          const updated = await apiUpdateMembership(editingId, payload);
+          setPlans(prev => prev.map(p => p.id === editingId ? updated : p));
+        } else {
+          const created = await apiCreateMembership(payload);
+          setPlans(prev => [created, ...prev]);
+        }
+        resetForm();
+        return;
+      } catch (e) {}
     }
+    if (editingId) setPlans(prev => prev.map(p => p.id === editingId ? payload : p));
+    else setPlans(prev => [payload, ...prev]);
     resetForm();
   }
 
@@ -63,8 +92,15 @@ export default function Memberships() {
     });
   }
 
-  function removePlan(id) {
+  async function removePlan(id) {
     if (!confirm('Удалить тариф?')) return;
+    if (useApi) {
+      try {
+        await apiDeleteMembership(id);
+        setPlans(prev => prev.filter(p => p.id !== id));
+        return;
+      } catch (e) {}
+    }
     setPlans(prev => prev.filter(p => p.id !== id));
   }
 

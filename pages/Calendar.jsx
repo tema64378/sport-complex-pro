@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { isApiAvailable, fetchCalendarSlots as apiFetchCalendarSlots, createCalendarSlot as apiCreateCalendarSlot, deleteCalendarSlot as apiDeleteCalendarSlot } from '../api';
 
 const seed = [
   { id: 1, date: '2026-02-11', time: '10:00', className: 'Йога', trainer: 'Светлана Смирнова', capacity: 16, booked: 12 },
@@ -18,10 +19,28 @@ function loadSlots() {
 export default function Calendar() {
   const [slots, setSlots] = useState(loadSlots());
   const [form, setForm] = useState({ date: '', time: '', className: '', trainer: '', capacity: 12, booked: 0 });
+  const [useApi, setUseApi] = useState(false);
 
   useEffect(() => {
-    try { localStorage.setItem('calendar_slots', JSON.stringify(slots)); } catch (e) {}
-  }, [slots]);
+    (async () => {
+      const ok = await isApiAvailable();
+      setUseApi(ok);
+      if (ok) {
+        try {
+          const remote = await apiFetchCalendarSlots();
+          setSlots(remote);
+          return;
+        } catch (e) {}
+      }
+      setSlots(loadSlots());
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!useApi) {
+      try { localStorage.setItem('calendar_slots', JSON.stringify(slots)); } catch (e) {}
+    }
+  }, [slots, useApi]);
 
   const grouped = useMemo(() => {
     const map = {};
@@ -32,14 +51,30 @@ export default function Calendar() {
     return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
   }, [slots]);
 
-  function addSlot() {
+  async function addSlot() {
     if (!form.date || !form.time || !form.className.trim()) return alert('Заполните дату, время и название.');
-    setSlots(prev => [{ id: Date.now(), ...form, capacity: Number(form.capacity || 0), booked: Number(form.booked || 0) }, ...prev]);
+    const payload = { ...form, capacity: Number(form.capacity || 0), booked: Number(form.booked || 0) };
+    if (useApi) {
+      try {
+        const created = await apiCreateCalendarSlot(payload);
+        setSlots(prev => [created, ...prev]);
+        setForm({ date: '', time: '', className: '', trainer: '', capacity: 12, booked: 0 });
+        return;
+      } catch (e) {}
+    }
+    setSlots(prev => [{ id: Date.now(), ...payload }, ...prev]);
     setForm({ date: '', time: '', className: '', trainer: '', capacity: 12, booked: 0 });
   }
 
-  function remove(id) {
+  async function remove(id) {
     if (!confirm('Удалить слот?')) return;
+    if (useApi) {
+      try {
+        await apiDeleteCalendarSlot(id);
+        setSlots(prev => prev.filter(s => s.id !== id));
+        return;
+      } catch (e) {}
+    }
     setSlots(prev => prev.filter(s => s.id !== id));
   }
 

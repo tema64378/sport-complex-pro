@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { isApiAvailable, fetchNotifications as apiFetchNotifications, createNotification as apiCreateNotification, updateNotification as apiUpdateNotification, deleteNotification as apiDeleteNotification } from '../api';
 
 const seed = [
   { id: 1, type: 'Оплата', title: 'Просрочен платёж', message: 'Клиент Мария Иванова: счёт на 1 500 ₽ просрочен на 2 дня', createdAt: '2026-02-10 11:20', read: false },
@@ -19,10 +20,28 @@ export default function Notifications() {
   const [notifications, setNotifications] = useState(loadNotifications());
   const [filter, setFilter] = useState('all');
   const [form, setForm] = useState({ type: 'Система', title: '', message: '' });
+  const [useApi, setUseApi] = useState(false);
 
   useEffect(() => {
-    try { localStorage.setItem('notifications', JSON.stringify(notifications)); } catch (e) {}
-  }, [notifications]);
+    (async () => {
+      const ok = await isApiAvailable();
+      setUseApi(ok);
+      if (ok) {
+        try {
+          const remote = await apiFetchNotifications();
+          setNotifications(remote);
+          return;
+        } catch (e) {}
+      }
+      setNotifications(loadNotifications());
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!useApi) {
+      try { localStorage.setItem('notifications', JSON.stringify(notifications)); } catch (e) {}
+    }
+  }, [notifications, useApi]);
 
   const filtered = useMemo(() => {
     if (filter === 'unread') return notifications.filter(n => !n.read);
@@ -30,15 +49,32 @@ export default function Notifications() {
     return notifications;
   }, [notifications, filter]);
 
-  function toggleRead(id) {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: !n.read } : n));
+  async function toggleRead(id) {
+    const next = notifications.find(n => n.id === id);
+    if (!next) return;
+    const updated = { ...next, read: !next.read };
+    if (useApi) {
+      try {
+        const saved = await apiUpdateNotification(id, { read: updated.read });
+        setNotifications(prev => prev.map(n => n.id === id ? saved : n));
+        return;
+      } catch (e) {}
+    }
+    setNotifications(prev => prev.map(n => n.id === id ? updated : n));
   }
 
-  function remove(id) {
+  async function remove(id) {
+    if (useApi) {
+      try {
+        await apiDeleteNotification(id);
+        setNotifications(prev => prev.filter(n => n.id !== id));
+        return;
+      } catch (e) {}
+    }
     setNotifications(prev => prev.filter(n => n.id !== id));
   }
 
-  function addNotification() {
+  async function addNotification() {
     if (!form.title.trim() || !form.message.trim()) return alert('Заполните заголовок и текст.');
     const item = {
       id: Date.now(),
@@ -48,6 +84,14 @@ export default function Notifications() {
       createdAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
       read: false,
     };
+    if (useApi) {
+      try {
+        const saved = await apiCreateNotification({ type: form.type, title: form.title, message: form.message });
+        setNotifications(prev => [saved, ...prev]);
+        setForm({ type: 'Система', title: '', message: '' });
+        return;
+      } catch (e) {}
+    }
     setNotifications(prev => [item, ...prev]);
     setForm({ type: 'Система', title: '', message: '' });
   }
