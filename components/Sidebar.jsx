@@ -52,7 +52,7 @@ export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setS
           onClick={() => setSidebarOpen(false)}
         />
       )}
-      <div className={`sidebar fixed left-0 top-0 h-screen transition-all duration-300 z-50 ${sidebarOpen ? 'w-64' : 'w-20'} ${isMobile ? (sidebarOpen ? 'translate-x-0' : '-translate-x-full') : ''} glass-nav text-slate-800 flex flex-col`}> 
+      <div className={`sidebar fixed left-0 top-0 h-screen transition-all duration-300 z-50 ${sidebarOpen ? 'w-64' : 'w-20'} ${isMobile ? (sidebarOpen ? 'translate-x-0' : '-translate-x-full') : ''} glass-nav text-slate-900 flex flex-col`}> 
       <div className="p-6 border-b border-transparent">
         <div className="flex items-center justify-between">
           {sidebarOpen && <h2 className="text-xl font-bold text-slate-900 tracking-wide">Спортивный Комплекс Pro</h2>}
@@ -69,7 +69,10 @@ export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setS
         {visibleItems.map((item) => (
           <button
             key={item.id}
-            onClick={() => setCurrentPage(item.id)}
+            onClick={() => {
+              setCurrentPage(item.id);
+              if (isMobile) setSidebarOpen(false);
+            }}
             className={`nav-item w-full flex items-center gap-4 px-4 py-3 rounded-lg transition-all duration-200 ${
               currentPage === item.id
                 ? 'active bg-white/5 border-r-4 border-blue-500'

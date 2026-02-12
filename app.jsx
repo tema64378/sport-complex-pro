@@ -169,23 +169,23 @@ function App() {
       <div className={`app-content flex-1 overflow-auto transition-all duration-300 ${sidebarOpen && !isMobile ? 'ml-64' : sidebarOpen && isMobile ? 'ml-0' : 'ml-0'}`}>
         <header className="sticky top-0 z-40">
           <div className="topbar p-4 px-6 shadow-sm border-b border-transparent">
-            <div className="flex items-center justify-between">
+            <div className="topbar-row flex items-center justify-between">
             <div className="flex items-center gap-4">
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="p-2 hover:bg-white/40 rounded-lg transition-colors"
+                className="icon-btn hover:bg-white/40 rounded-lg transition-colors"
               >
                 <i className="fas fa-bars text-xl text-gray-700"></i>
               </button>
-              <h1 className="text-2xl font-bold text-gray-900">
+              <h1 className="topbar-title text-2xl font-bold text-gray-900">
                 {isMobile ? 'СК Pro' : 'Спортивный Комплекс Pro'}
               </h1>
             </div>
             <div className="flex items-center gap-4">
-              <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="p-2 hover:bg-white/40 rounded-full transition-colors">
+              <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="icon-btn hover:bg-white/40 rounded-full transition-colors">
                 <i className={`fas ${theme === 'dark' ? 'fa-sun' : 'fa-moon'} text-lg text-gray-700`}></i>
               </button>
-              <button className="p-2 hover:bg-white/40 rounded-full transition-colors relative">
+              <button className="icon-btn hover:bg-white/40 rounded-full transition-colors relative">
                 <i className="fas fa-bell text-xl text-gray-700"></i>
                 <span className="absolute top-1 right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">3</span>
               </button>
