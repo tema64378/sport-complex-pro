@@ -11,10 +11,22 @@ body {
 
 .app-shell {
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .app-content {
   padding-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+.app-main {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .sidebar-backdrop {

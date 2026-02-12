@@ -156,7 +156,7 @@ function App() {
   }
 
   return (
-    <div className="app-shell flex h-screen">
+    <div className="app-shell flex min-h-screen">
       <Sidebar 
         currentPage={currentPage} 
         setCurrentPage={setCurrentPage}
@@ -166,7 +166,7 @@ function App() {
         onLogout={handleLogout}
         isMobile={isMobile}
       />
-      <div className={`app-content flex-1 overflow-auto transition-all duration-300 ${sidebarOpen && !isMobile ? 'ml-64' : sidebarOpen && isMobile ? 'ml-0' : 'ml-0'}`}>
+      <div className={`app-content flex-1 transition-all duration-300 ${sidebarOpen && !isMobile ? 'ml-64' : sidebarOpen && isMobile ? 'ml-0' : 'ml-0'}`}>
         <header className="sticky top-0 z-40">
           <div className="topbar p-4 px-6 shadow-sm border-b border-transparent">
             <div className="topbar-row flex items-center justify-between">
@@ -196,7 +196,7 @@ function App() {
             </div>
           </div>
         </header>
-        <main className="p-6">
+        <main className="p-6 app-main">
           {renderPage()}
         </main>
       </div>
