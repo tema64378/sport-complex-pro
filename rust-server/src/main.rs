@@ -4168,7 +4168,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/auth/vk/login", get(auth_vk_login))
         .route("/api/auth/vk/callback", get(auth_vk_callback))
         .route("/api/auth/me", get(auth_me))
-        .route("/api/auth/profile", patch(auth_profile_update))
+        .route("/api/auth/profile", patch(auth_profile_update).post(auth_profile_update))
         .route("/api/auth/logout", post(auth_logout))
         .route("/api/users", get(users_list).post(users_create))
         .route("/api/users/:id", put(users_update))

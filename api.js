@@ -399,17 +399,29 @@ async function fetchMe() {
 }
 
 async function updateMyProfile(payload) {
-  const res = await apiFetch(`${API_BASE}/auth/profile`, {
-    method: 'PATCH',
+  const body = JSON.stringify(payload || {});
+  const request = (method) => apiFetch(`${API_BASE}/auth/profile`, {
+    method,
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload || {}),
+    body,
   });
+
+  let res = await request('PATCH');
+  if (!res.ok && [404, 405, 501].includes(res.status)) {
+    res = await request('POST');
+  }
+
   if (!res.ok) {
-    let message = 'Profile update failed';
+    let message = `Profile update failed (HTTP ${res.status})`;
     try {
       const data = await res.json();
       if (data?.error) message = data.error;
-    } catch (e) {}
+    } catch (e) {
+      try {
+        const text = (await res.text()).trim();
+        if (text) message = text.slice(0, 180);
+      } catch (_) {}
+    }
     throw new Error(message);
   }
   return res.json();
