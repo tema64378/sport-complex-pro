@@ -51,6 +51,7 @@ export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setS
 
   const visibleItems = menuItems.filter(item => {
     if (!session) return item.id === 'auth';
+    if (session?.needsEmail) return item.id === 'auth';
     return roleAccess[item.id]?.includes(session.role);
   });
 

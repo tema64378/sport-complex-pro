@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { isApiAvailable, registerUser, loginUser, logoutUser, completeVkOneTap } from '../api';
+import { isApiAvailable, registerUser, loginUser, logoutUser, completeVkOneTap, updateMyProfile } from '../api';
 
 const DEFAULT_USERS = [
   { id: 1, name: 'Администратор', email: 'admin@sportcomplex.com', phone: '+7 (495) 123-45-67', role: 'Администратор', password: 'admin123' },
@@ -34,6 +34,15 @@ function clearSession() {
   try { localStorage.removeItem('auth_session'); } catch (e) {}
 }
 
+function isValidEmail(value) {
+  const email = String(value || '').trim();
+  if (!email || email.includes(' ')) return false;
+  const parts = email.split('@');
+  if (parts.length !== 2) return false;
+  if (!parts[0] || !parts[1]) return false;
+  return parts[1].includes('.');
+}
+
 export default function Auth({ session, setSession }) {
   const [activeTab, setActiveTab] = useState('login');
   const [users, setUsers] = useState([]);
@@ -42,6 +51,10 @@ export default function Auth({ session, setSession }) {
   const oneTapRef = useRef(null);
   const oneTapInitedRef = useRef(false);
   const [oneTapError, setOneTapError] = useState('');
+  const [emailPromptOpen, setEmailPromptOpen] = useState(false);
+  const [emailPromptValue, setEmailPromptValue] = useState('');
+  const [emailPromptError, setEmailPromptError] = useState('');
+  const [emailPromptSaving, setEmailPromptSaving] = useState(false);
 
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [registerForm, setRegisterForm] = useState({ name: '', email: '', phone: '', password: '', confirm: '' });
@@ -132,6 +145,9 @@ export default function Auth({ session, setSession }) {
       try { localStorage.removeItem('auth_token'); } catch (e) {}
       clearSession();
       setSession(null);
+      setEmailPromptOpen(false);
+      setEmailPromptValue('');
+      setEmailPromptError('');
       setMessage('Сессия завершена.');
     })();
   }
@@ -167,10 +183,40 @@ export default function Auth({ session, setSession }) {
     });
 
     try { localStorage.setItem('auth_token', res.token); } catch (e) {}
+    if (res?.user?.needsEmail) {
+      setEmailPromptOpen(true);
+      setEmailPromptValue('');
+      setEmailPromptError('');
+      setMessage('');
+      return;
+    }
     const nextSession = { ...res.user, loginAt: new Date().toISOString() };
     setSession(nextSession);
     saveSession(nextSession);
     setMessage('Вход через VK выполнен.');
+  }
+
+  async function submitMissingEmail() {
+    setEmailPromptError('');
+    const email = emailPromptValue.trim();
+    if (!isValidEmail(email)) {
+      setEmailPromptError('Введите корректный email.');
+      return;
+    }
+    setEmailPromptSaving(true);
+    try {
+      const res = await updateMyProfile({ email });
+      const nextSession = { ...res.user, loginAt: new Date().toISOString() };
+      setSession(nextSession);
+      saveSession(nextSession);
+      setEmailPromptOpen(false);
+      setEmailPromptValue('');
+      setMessage('Email успешно сохранен. Вход через VK завершен.');
+    } catch (e) {
+      setEmailPromptError(e?.message || 'Не удалось сохранить email.');
+    } finally {
+      setEmailPromptSaving(false);
+    }
   }
 
   async function handleVkOAuth() {
@@ -251,6 +297,55 @@ export default function Auth({ session, setSession }) {
 
   return (
     <div className="min-h-screen p-4" style={{ backgroundColor: 'var(--bg)', color: 'var(--text-primary)' }}>
+      {emailPromptOpen && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="glass-card p-6 w-full max-w-md">
+            <h3 className="text-xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Укажите вашу почту</h3>
+            <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
+              Для VK-регистрации нужен ваш реальный email.
+            </p>
+            <input
+              type="email"
+              value={emailPromptValue}
+              onChange={(e) => setEmailPromptValue(e.target.value)}
+              placeholder="you@example.com"
+              className="w-full px-4 py-3 rounded-xl focus:outline-none focus:ring-2 transition"
+              style={{
+                backgroundColor: 'var(--card-bg)',
+                color: 'var(--text-primary)',
+                borderColor: 'var(--card-border)',
+                '--tw-ring-color': 'var(--accent)'
+              }}
+            />
+            {emailPromptError && (
+              <p className="text-sm mt-2" style={{ color: '#ef4444' }}>{emailPromptError}</p>
+            )}
+            <div className="mt-4 flex gap-2 justify-end">
+              <button
+                onClick={() => {
+                  try { localStorage.removeItem('auth_token'); } catch (e) {}
+                  setEmailPromptOpen(false);
+                  setEmailPromptValue('');
+                  setEmailPromptError('');
+                }}
+                className="px-4 py-2 rounded-lg"
+                style={{ backgroundColor: 'var(--card-bg)', color: 'var(--text-secondary)' }}
+                disabled={emailPromptSaving}
+              >
+                Отмена
+              </button>
+              <button
+                onClick={submitMissingEmail}
+                className="px-4 py-2 rounded-lg text-white"
+                style={{ backgroundColor: 'var(--accent)' }}
+                disabled={emailPromptSaving}
+              >
+                {emailPromptSaving ? 'Сохраняю...' : 'Сохранить email'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-center min-h-screen">
         <div className="w-full max-w-5xl">
           {/* Header */}

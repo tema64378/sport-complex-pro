@@ -81,6 +81,12 @@ function App() {
     return () => { mounted = false; };
   }, [session]);
 
+  useEffect(() => {
+    if (session?.needsEmail && currentPage !== 'auth') {
+      setCurrentPage('auth');
+    }
+  }, [session, currentPage]);
+
   const roleAccess = {
     dashboard: ['Администратор', 'Тренер', 'Клиент'],
     auth: ['Администратор', 'Тренер', 'Клиент'],
@@ -109,6 +115,7 @@ function App() {
 
   const renderPage = () => {
     if (!session && currentPage !== 'auth') return <Auth session={session} setSession={setSession} />;
+    if (session?.needsEmail && currentPage !== 'auth') return <Auth session={session} setSession={setSession} />;
     if (session && !isAllowed) {
       return (
         <div className="glass-card p-6">

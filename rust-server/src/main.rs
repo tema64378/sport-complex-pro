@@ -141,6 +141,29 @@ fn needs_password_upgrade(stored: &str) -> bool {
     !is_argon2_hash(stored)
 }
 
+fn email_needs_update(email: &str) -> bool {
+    let lowered = email.trim().to_lowercase();
+    lowered.is_empty() || lowered.ends_with("@vk.local") || lowered == "vk_demo@vk.com"
+}
+
+fn looks_like_email(email: &str) -> bool {
+    let value = email.trim();
+    if value.is_empty() || value.contains(' ') {
+        return false;
+    }
+    let (local, domain) = match value.split_once('@') {
+        Some(parts) => parts,
+        None => return false,
+    };
+    if local.is_empty() || domain.is_empty() {
+        return false;
+    }
+    if domain.starts_with('.') || domain.ends_with('.') || !domain.contains('.') {
+        return false;
+    }
+    true
+}
+
 fn to_json_value(v: ValueRef<'_>) -> Value {
     match v {
         ValueRef::Null => Value::Null,
@@ -1796,13 +1819,14 @@ async fn auth_register(State(state): State<AppState>, Json(body): Json<Value>) -
     )
     .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Register failed"))?;
 
-    let user = query_one(
+    let user_raw = query_one(
         &conn,
         "SELECT id, name, email, phone, role FROM users WHERE id = ?1",
         &[&user_id],
     )
     .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Register failed"))?
     .unwrap_or_else(|| json!({}));
+    let user = user_with_flags(&user_raw);
 
     Ok((StatusCode::CREATED, Json(json!({ "user": user, "token": token }))).into_response())
 }
@@ -1844,13 +1868,7 @@ async fn auth_login(State(state): State<AppState>, Json(body): Json<Value>) -> A
     )
     .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Login failed"))?;
 
-    let safe_user = json!({
-        "id": value_i64(&user, "id"),
-        "name": value_string(&user, "name"),
-        "email": value_string(&user, "email"),
-        "phone": value_string(&user, "phone"),
-        "role": value_string(&user, "role"),
-    });
+    let safe_user = user_with_flags(&user);
 
     Ok(Json(json!({ "user": safe_user, "token": token })))
 }
@@ -2047,6 +2065,18 @@ fn fetch_safe_user(conn: &Connection, user_id: i64) -> rusqlite::Result<Value> {
         &[&user_id],
     )?
     .unwrap_or_else(|| json!({})))
+}
+
+fn user_with_flags(user: &Value) -> Value {
+    let email = value_string(user, "email");
+    json!({
+        "id": value_i64(user, "id"),
+        "name": value_string(user, "name"),
+        "email": email,
+        "phone": value_string(user, "phone"),
+        "role": value_string(user, "role"),
+        "needsEmail": email_needs_update(&email),
+    })
 }
 
 fn ensure_member_profile(conn: &Connection, name: &str, email: &str, phone: &str) -> rusqlite::Result<()> {
@@ -2287,21 +2317,23 @@ fn issue_session(conn: &Connection, user_id: i64) -> rusqlite::Result<String> {
 
 async fn auth_vk_demo(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     let conn = lock_db(&state)?;
-    let user = ensure_vk_demo_user(&conn, Some("VK Пользователь".to_string()), Some("vk_demo@vk.com".to_string()))
+    let user_raw = ensure_vk_demo_user(&conn, Some("VK Пользователь".to_string()), Some("vk_demo@vk.com".to_string()))
         .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "VK demo failed"))?;
-    let token = issue_session(&conn, value_i64(&user, "id"))
+    let token = issue_session(&conn, value_i64(&user_raw, "id"))
         .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "VK demo failed"))?;
+    let user = user_with_flags(&user_raw);
     Ok(Json(json!({ "user": user, "token": token, "demo": true })))
 }
 
 async fn auth_vk_complete(State(state): State<AppState>, Json(body): Json<Value>) -> ApiResult<Json<Value>> {
     let hints = extract_vk_profile_hints(&body);
     let conn = lock_db(&state)?;
-    let user = ensure_vk_profile_user(&conn, &hints)
+    let user_raw = ensure_vk_profile_user(&conn, &hints)
     .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "VK auth failed"))?;
 
-    let token = issue_session(&conn, value_i64(&user, "id"))
+    let token = issue_session(&conn, value_i64(&user_raw, "id"))
         .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "VK auth failed"))?;
+    let user = user_with_flags(&user_raw);
 
     Ok(Json(json!({ "user": user, "token": token })))
 }
@@ -2333,8 +2365,71 @@ async fn auth_me(State(state): State<AppState>, headers: HeaderMap) -> ApiResult
             "email": user.email,
             "phone": user.phone,
             "role": user.role,
+            "needsEmail": email_needs_update(&user.email),
         }
     })))
+}
+
+async fn auth_profile_update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> ApiResult<Json<Value>> {
+    let authed = auth_user(&headers, &state)?;
+    let name_patch = body_opt_string(&body, "name");
+    let email_patch = body_opt_string(&body, "email");
+    let phone_patch = body_opt_string(&body, "phone");
+
+    if name_patch.is_none() && email_patch.is_none() && phone_patch.is_none() {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "No profile fields provided",
+        ));
+    }
+
+    if let Some(email) = email_patch.as_ref() {
+        if !looks_like_email(email) {
+            return Err(ApiError::new(StatusCode::BAD_REQUEST, "Invalid email"));
+        }
+    }
+
+    let conn = lock_db(&state)?;
+    let current = fetch_safe_user(&conn, authed.id)
+        .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Profile update failed"))?;
+    let current_email = value_string(&current, "email");
+
+    let mut next_name = value_string(&current, "name");
+    let mut next_email = current_email.clone();
+    let mut next_phone = value_string(&current, "phone");
+
+    if let Some(name) = normalize_non_empty(name_patch) {
+        next_name = name;
+    }
+    if let Some(email) = normalize_non_empty(email_patch) {
+        if email != current_email {
+            let exists = find_user_id_by_email(&conn, &email)
+                .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Profile update failed"))?;
+            if exists.is_some() && exists != Some(authed.id) {
+                return Err(ApiError::new(StatusCode::CONFLICT, "Email already exists"));
+            }
+        }
+        next_email = email;
+    }
+    if let Some(phone) = normalize_non_empty(phone_patch) {
+        next_phone = phone;
+    }
+
+    conn.execute(
+        "UPDATE users SET name = ?1, email = ?2, phone = ?3 WHERE id = ?4",
+        params![next_name, next_email, next_phone, authed.id],
+    )
+    .map_err(|err| map_db_write_error(err, "Profile update failed"))?;
+
+    let _ = ensure_member_profile(&conn, &next_name, &next_email, &next_phone);
+
+    let updated = fetch_safe_user(&conn, authed.id)
+        .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Profile update failed"))?;
+    Ok(Json(json!({ "user": user_with_flags(&updated) })))
 }
 
 async fn auth_logout(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
@@ -4073,6 +4168,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/auth/vk/login", get(auth_vk_login))
         .route("/api/auth/vk/callback", get(auth_vk_callback))
         .route("/api/auth/me", get(auth_me))
+        .route("/api/auth/profile", patch(auth_profile_update))
         .route("/api/auth/logout", post(auth_logout))
         .route("/api/users", get(users_list).post(users_create))
         .route("/api/users/:id", put(users_update))

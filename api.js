@@ -398,6 +398,23 @@ async function fetchMe() {
   return res.json();
 }
 
+async function updateMyProfile(payload) {
+  const res = await apiFetch(`${API_BASE}/auth/profile`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {}),
+  });
+  if (!res.ok) {
+    let message = 'Profile update failed';
+    try {
+      const data = await res.json();
+      if (data?.error) message = data.error;
+    } catch (e) {}
+    throw new Error(message);
+  }
+  return res.json();
+}
+
 async function loginVkDemo() {
   const res = await apiFetch(`${API_BASE}/auth/vk-demo`, { method: 'POST' });
   if (!res.ok) throw new Error('Auth vk demo failed');
@@ -592,6 +609,7 @@ export { isApiAvailable, fetchMembers, createMember, updateMember, deleteMember,
   fetchBookings, createBooking, updateBooking, deleteBooking,
   fetchPayments, createPayment, updatePayment, deletePayment,
   registerUser, loginUser, logoutUser, fetchMe, loginVkDemo,
+  updateMyProfile,
   fetchServices, fetchReceipts, createReceipt, updateReceipt,
   fetchDeals, createDeal, updateDeal, deleteDeal, fetchForecast, searchAll,
   fetchMembersReport, fetchPaymentsReport, fetchBookingsReport, fetchSummary, downloadCsvReport,
