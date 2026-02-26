@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { logoutUser, fetchMe } from './api';
-import Sidebar from './components/Sidebar';
+import TopNav from './components/TopNav';
 import Dashboard from './pages/Dashboard';
 import Members from './pages/Members';
 import Trainers from './pages/Trainers';
@@ -22,11 +22,60 @@ import Memberships from './pages/Memberships';
 import Calendar from './pages/Calendar';
 import Crm from './pages/Crm';
 import DatabaseAdmin from './pages/DatabaseAdmin';
+import News from './pages/News';
+
+const MENU_ITEMS = [
+  { id: 'dashboard', label: 'Главная', icon: 'fas fa-chart-line' },
+  { id: 'news', label: 'Новости', icon: 'fas fa-newspaper' },
+  { id: 'notifications', label: 'Уведомления', icon: 'fas fa-bell' },
+  { id: 'members', label: 'Клиенты', icon: 'fas fa-users' },
+  { id: 'crm', label: 'CRM профили', icon: 'fas fa-address-card' },
+  { id: 'trainers', label: 'Тренеры', icon: 'fas fa-person' },
+  { id: 'memberships', label: 'Абонементы', icon: 'fas fa-ticket' },
+  { id: 'classes', label: 'Тренировки', icon: 'fas fa-dumbbell' },
+  { id: 'bookings', label: 'Бронирования', icon: 'fas fa-calendar' },
+  { id: 'calendar', label: 'Календарь', icon: 'fas fa-calendar-days' },
+  { id: 'services', label: 'Услуги и чек', icon: 'fas fa-receipt' },
+  { id: 'deals', label: 'Сделки', icon: 'fas fa-handshake' },
+  { id: 'payments', label: 'Платежи', icon: 'fas fa-credit-card' },
+  { id: 'analytics', label: 'Аналитика', icon: 'fas fa-chart-bar' },
+  { id: 'forecast', label: 'Прогноз спроса', icon: 'fas fa-wave-square' },
+  { id: 'reports', label: 'Отчеты', icon: 'fas fa-file-csv' },
+  { id: 'search', label: 'Быстрый поиск', icon: 'fas fa-magnifying-glass' },
+  { id: 'users', label: 'Пользователи', icon: 'fas fa-user-shield' },
+  { id: 'database', label: 'База данных', icon: 'fas fa-database' },
+  { id: 'settings', label: 'Параметры', icon: 'fas fa-cog' },
+  { id: 'client', label: 'Мой кабинет', icon: 'fas fa-id-badge' },
+  { id: 'auth', label: 'Вход', icon: 'fas fa-user-circle' },
+];
+
+const PAGE_META = {
+  dashboard: { title: 'Панель управления', subtitle: 'Ключевые показатели, тренды и быстрые действия.' },
+  news: { title: 'Новости клуба', subtitle: 'Анонсы, обновления сервиса и важные объявления.' },
+  notifications: { title: 'Уведомления', subtitle: 'Сообщения для команды и клиентов в реальном времени.' },
+  members: { title: 'Клиенты', subtitle: 'Профили, статусы и история взаимодействий.' },
+  crm: { title: 'CRM профили', subtitle: 'Сегментация, коммуникации и воронка продаж.' },
+  trainers: { title: 'Тренеры', subtitle: 'Команда, специализации и загрузка расписания.' },
+  memberships: { title: 'Абонементы', subtitle: 'Тарифы, условия и активные подписки.' },
+  classes: { title: 'Тренировки', subtitle: 'Управление группами, слотами и посещаемостью.' },
+  bookings: { title: 'Бронирования', subtitle: 'Записи клиентов и контроль заполненности.' },
+  calendar: { title: 'Календарь', subtitle: 'Расписание клуба по дням и залам.' },
+  services: { title: 'Услуги', subtitle: 'Чек, продажи и дополнительные опции.' },
+  deals: { title: 'Сделки', subtitle: 'Коммерческие предложения и этапы оплаты.' },
+  payments: { title: 'Платежи', subtitle: 'Транзакции, статусы и финансовая дисциплина.' },
+  analytics: { title: 'Аналитика', subtitle: 'Показатели эффективности и рост выручки.' },
+  forecast: { title: 'Прогноз', subtitle: 'Оценка спроса и планирование нагрузки.' },
+  reports: { title: 'Отчеты', subtitle: 'Экспорт сводок и аналитических таблиц.' },
+  search: { title: 'Поиск', subtitle: 'Быстрая навигация по данным системы.' },
+  users: { title: 'Пользователи', subtitle: 'Роли, права доступа и безопасность аккаунтов.' },
+  database: { title: 'База данных', subtitle: 'Администрирование, выборки и контроль изменений.' },
+  settings: { title: 'Параметры', subtitle: 'Конфигурация платформы и рабочих процессов.' },
+  client: { title: 'Личный кабинет', subtitle: 'Персональная информация, записи и платежи.' },
+  auth: { title: 'Вход и регистрация', subtitle: 'Авторизация и управление доступом.' },
+};
 
 function App() {
   const [currentPage, setCurrentPage] = useState('dashboard');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 1024);
   const [session, setSession] = useState(() => {
     try {
       const raw = localStorage.getItem('auth_session');
@@ -45,19 +94,8 @@ function App() {
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    try { localStorage.setItem('theme', theme); } catch(e){}
+    try { localStorage.setItem('theme', theme); } catch (e) {}
   }, [theme]);
-
-  useEffect(() => {
-    const onResize = () => {
-      const mobile = window.innerWidth <= 1024;
-      setIsMobile(mobile);
-      if (mobile) setSidebarOpen(false);
-    };
-    onResize();
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -97,6 +135,7 @@ function App() {
 
   const roleAccess = {
     dashboard: ['Администратор', 'Тренер', 'Клиент'],
+    news: ['Администратор', 'Тренер', 'Клиент'],
     auth: ['Администратор', 'Тренер', 'Клиент'],
     notifications: ['Администратор', 'Тренер', 'Клиент'],
     client: ['Клиент'],
@@ -119,12 +158,30 @@ function App() {
     database: ['Администратор'],
   };
 
-  const isAllowed = session && roleAccess[currentPage]?.includes(session.role);
+  const visibleItems = useMemo(() => {
+    if (!session) {
+      return MENU_ITEMS.filter((item) => item.id === 'news' || item.id === 'auth');
+    }
+    if (mustCompleteEmail) {
+      return MENU_ITEMS.filter((item) => item.id === 'auth');
+    }
+    return MENU_ITEMS.filter((item) => roleAccess[item.id]?.includes(session.role));
+  }, [session, mustCompleteEmail]);
+
+  useEffect(() => {
+    if (visibleItems.length === 0) return;
+    const exists = visibleItems.some((item) => item.id === currentPage);
+    if (!exists) {
+      setCurrentPage(visibleItems[0].id);
+    }
+  }, [currentPage, visibleItems]);
+
+  const isAllowed = currentPage === 'news' || (session && roleAccess[currentPage]?.includes(session.role));
 
   const renderPage = () => {
-    if (!session && currentPage !== 'auth') return <Auth session={session} setSession={setSession} />;
+    if (!session && currentPage !== 'auth' && currentPage !== 'news') return <Auth session={session} setSession={setSession} />;
     if (mustCompleteEmail && currentPage !== 'auth') return <Auth session={session} setSession={setSession} />;
-    if (session && !isAllowed) {
+    if (session && currentPage !== 'news' && !isAllowed) {
       return (
         <div className="glass-card p-6">
           <h2 className="text-xl font-bold text-slate-900">Нет доступа</h2>
@@ -135,6 +192,8 @@ function App() {
     switch (currentPage) {
       case 'dashboard':
         return session?.role === 'Клиент' ? <Client /> : <Dashboard />;
+      case 'news':
+        return <News />;
       case 'members':
         return <Members />;
       case 'trainers':
@@ -186,53 +245,51 @@ function App() {
       try { localStorage.removeItem('auth_session'); } catch (e) {}
       try { localStorage.removeItem('auth_token'); } catch (e) {}
       setSession(null);
-      setCurrentPage('auth');
+      setCurrentPage('news');
     })();
   }
 
+  const pageMeta = PAGE_META[currentPage] || PAGE_META.dashboard;
+
   return (
-    <div className="app-shell flex min-h-screen">
-      <Sidebar 
+    <div className="site-shell">
+      <div className="site-glow site-glow--one" />
+      <div className="site-glow site-glow--two" />
+      <TopNav
         currentPage={currentPage} 
         setCurrentPage={setCurrentPage}
-        sidebarOpen={sidebarOpen}
-        setSidebarOpen={setSidebarOpen}
+        menuItems={visibleItems}
         session={session}
         onLogout={handleLogout}
-        isMobile={isMobile}
+        theme={theme}
+        onThemeToggle={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+        mustCompleteEmail={mustCompleteEmail}
       />
-      <div className={`app-content flex-1 transition-all duration-300 ${sidebarOpen && !isMobile ? 'ml-64' : sidebarOpen && isMobile ? 'ml-0' : 'ml-0'}`}>
-        <header className="sticky top-0 z-40">
-          <div className="topbar p-4 px-6 shadow-sm border-b border-transparent">
-            <div className="topbar-row flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="icon-btn hover:bg-white/40 rounded-lg transition-colors"
-              >
-                <i className="fas fa-bars text-xl text-gray-700"></i>
-              </button>
-              <h1 className="topbar-title text-2xl font-bold text-gray-900">
-                {isMobile ? 'СК Pro' : 'Спортивный Комплекс Pro'}
-              </h1>
+      <div className="site-content">
+        {currentPage !== 'auth' && (
+          <header className="page-intro glass-card">
+            <div>
+              <h1 className="page-title">{pageMeta.title}</h1>
+              <p className="page-subtitle">{pageMeta.subtitle}</p>
             </div>
-            <div className="flex items-center gap-4">
-              <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="icon-btn hover:bg-white/40 rounded-full transition-colors">
-                <i className={`fas ${theme === 'dark' ? 'fa-sun' : 'fa-moon'} text-lg text-gray-700`}></i>
-              </button>
-              <button className="icon-btn hover:bg-white/40 rounded-full transition-colors relative">
-                <i className="fas fa-bell text-xl text-gray-700"></i>
-                <span className="absolute top-1 right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">3</span>
-              </button>
-              <button className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold">
-                {session?.name ? session.name.slice(0, 1).toUpperCase() : 'Г'}
-              </button>
+            <div className="page-intro-meta">
+              <span className="intro-chip">
+                <i className="fas fa-calendar-day" />
+                {new Date().toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' })}
+              </span>
+              {session && (
+                <span className="intro-chip intro-chip--accent">
+                  <i className="fas fa-user-check" />
+                  {session.role}
+                </span>
+              )}
             </div>
-            </div>
+          </header>
+        )}
+        <main className="site-main">
+          <div className="page-content">
+            {renderPage()}
           </div>
-        </header>
-        <main className="p-6 app-main">
-          {renderPage()}
         </main>
       </div>
     </div>
