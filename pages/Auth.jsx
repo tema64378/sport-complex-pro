@@ -60,6 +60,7 @@ export default function Auth({ session, setSession }) {
   const [emailPromptValue, setEmailPromptValue] = useState('');
   const [emailPromptError, setEmailPromptError] = useState('');
   const [emailPromptSaving, setEmailPromptSaving] = useState(false);
+  const needsEmailCompletion = Boolean(session?.needsEmail || isTemporaryVkEmail(session?.email));
 
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [registerForm, setRegisterForm] = useState({ name: '', email: '', phone: '', password: '', confirm: '' });
@@ -78,7 +79,7 @@ export default function Auth({ session, setSession }) {
   useEffect(() => { saveUsers(users); }, [users]);
 
   useEffect(() => {
-    if (!session?.needsEmail) {
+    if (!needsEmailCompletion) {
       setEmailPromptOpen(false);
       return;
     }
@@ -87,7 +88,7 @@ export default function Auth({ session, setSession }) {
     if (!emailPromptValue && session?.email && !isTemporaryVkEmail(session.email)) {
       setEmailPromptValue(session.email);
     }
-  }, [session, emailPromptValue]);
+  }, [needsEmailCompletion, session, emailPromptValue]);
 
   const existingEmails = useMemo(() => new Set(users.map(u => u.email.toLowerCase())), [users]);
 
@@ -200,7 +201,7 @@ export default function Auth({ session, setSession }) {
     });
 
     try { localStorage.setItem('auth_token', res.token); } catch (e) {}
-    if (res?.user?.needsEmail) {
+    if (res?.user?.needsEmail || isTemporaryVkEmail(res?.user?.email)) {
       setEmailPromptOpen(true);
       setEmailPromptValue('');
       setEmailPromptError('');

@@ -81,11 +81,19 @@ function App() {
     return () => { mounted = false; };
   }, [session]);
 
+  const mustCompleteEmail = Boolean(
+    session && (
+      session.needsEmail ||
+      (typeof session.email === 'string' && session.email.toLowerCase().endsWith('@vk.local')) ||
+      (typeof session.email === 'string' && session.email.toLowerCase() === 'vk_demo@vk.com')
+    )
+  );
+
   useEffect(() => {
-    if (session?.needsEmail && currentPage !== 'auth') {
+    if (mustCompleteEmail && currentPage !== 'auth') {
       setCurrentPage('auth');
     }
-  }, [session, currentPage]);
+  }, [mustCompleteEmail, currentPage]);
 
   const roleAccess = {
     dashboard: ['Администратор', 'Тренер', 'Клиент'],
@@ -115,7 +123,7 @@ function App() {
 
   const renderPage = () => {
     if (!session && currentPage !== 'auth') return <Auth session={session} setSession={setSession} />;
-    if (session?.needsEmail && currentPage !== 'auth') return <Auth session={session} setSession={setSession} />;
+    if (mustCompleteEmail && currentPage !== 'auth') return <Auth session={session} setSession={setSession} />;
     if (session && !isAllowed) {
       return (
         <div className="glass-card p-6">

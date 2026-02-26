@@ -1,6 +1,14 @@
 import React from 'react';
 
 export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setSidebarOpen, session, onLogout, isMobile }) {
+  const mustCompleteEmail = Boolean(
+    session && (
+      session.needsEmail ||
+      (typeof session.email === 'string' && session.email.toLowerCase().endsWith('@vk.local')) ||
+      (typeof session.email === 'string' && session.email.toLowerCase() === 'vk_demo@vk.com')
+    )
+  );
+
   const menuItems = [
     { id: 'dashboard', label: 'Главная', icon: 'fas fa-chart-line' },
     { id: 'auth', label: 'Вход/Регистрация', icon: 'fas fa-user-circle' },
@@ -51,7 +59,7 @@ export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setS
 
   const visibleItems = menuItems.filter(item => {
     if (!session) return item.id === 'auth';
-    if (session?.needsEmail) return item.id === 'auth';
+    if (mustCompleteEmail) return item.id === 'auth';
     return roleAccess[item.id]?.includes(session.role);
   });
 
