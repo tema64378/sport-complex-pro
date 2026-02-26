@@ -21,6 +21,7 @@ export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setS
     { id: 'reports', label: 'Отчеты', icon: 'fas fa-file-csv' },
     { id: 'search', label: 'Быстрый поиск', icon: 'fas fa-magnifying-glass' },
     { id: 'users', label: 'Пользователи', icon: 'fas fa-user-shield' },
+    { id: 'database', label: 'База данных', icon: 'fas fa-database' },
     { id: 'settings', label: 'Параметры', icon: 'fas fa-cog' },
   ];
 
@@ -44,6 +45,7 @@ export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setS
     reports: ['Администратор'],
     search: ['Администратор', 'Тренер'],
     users: ['Администратор'],
+    database: ['Администратор'],
     settings: ['Администратор'],
   };
 

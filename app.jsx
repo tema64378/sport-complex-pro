@@ -21,6 +21,7 @@ import Notifications from './pages/Notifications';
 import Memberships from './pages/Memberships';
 import Calendar from './pages/Calendar';
 import Crm from './pages/Crm';
+import DatabaseAdmin from './pages/DatabaseAdmin';
 
 function App() {
   const [currentPage, setCurrentPage] = useState('dashboard');
@@ -101,6 +102,7 @@ function App() {
     search: ['Администратор', 'Тренер'],
     settings: ['Администратор'],
     users: ['Администратор'],
+    database: ['Администратор'],
   };
 
   const isAllowed = session && roleAccess[currentPage]?.includes(session.role);
@@ -142,6 +144,8 @@ function App() {
         return <Settings />;
       case 'users':
         return <Users />;
+      case 'database':
+        return <DatabaseAdmin />;
       case 'auth':
         return <Auth session={session} setSession={setSession} />;
       case 'services':
