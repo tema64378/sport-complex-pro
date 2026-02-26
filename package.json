@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "api:dev": "cd rust-server && cargo run",
+    "api:start": "cd rust-server && cargo run --release",
     "build": "vite build",
     "preview": "vite preview"
   },

@@ -4,4 +4,7 @@ dist/
 .env.local
 .env.*.local
 *.log
-.DS_Storeserver/database.db
+.DS_Store
+server/database.db
+rust-server/target/
+rust-server/data.db
