@@ -681,6 +681,23 @@ fn migrate_v4_integrity_triggers(conn: &Connection) -> rusqlite::Result<()> {
     )
 }
 
+fn migrate_v5_vk_accounts(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS vk_accounts (
+          vkUserId TEXT PRIMARY KEY,
+          userId INTEGER NOT NULL UNIQUE,
+          profileJson TEXT NOT NULL DEFAULT '{}',
+          createdAt TEXT NOT NULL,
+          updatedAt TEXT NOT NULL,
+          FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_vk_accounts_user_id ON vk_accounts(userId);
+        ",
+    )
+}
+
 fn run_sqlite_backup(
     conn: &Connection,
     backup_dir: &str,
@@ -1462,6 +1479,7 @@ fn init_db(conn: &Connection) -> rusqlite::Result<()> {
         "integrity_triggers_and_checks",
         migrate_v4_integrity_triggers,
     )?;
+    apply_migration(conn, 5, "vk_accounts", migrate_v5_vk_accounts)?;
 
     recalculate_class_enrollment(conn)?;
     generate_notifications(conn)?;
@@ -1837,6 +1855,385 @@ async fn auth_login(State(state): State<AppState>, Json(body): Json<Value>) -> A
     Ok(Json(json!({ "user": safe_user, "token": token })))
 }
 
+#[derive(Debug, Clone)]
+struct VkProfileHints {
+    vk_user_id: Option<String>,
+    name: Option<String>,
+    email: Option<String>,
+    phone: Option<String>,
+    raw: Value,
+}
+
+fn normalize_non_empty(input: Option<String>) -> Option<String> {
+    input.and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
+fn json_path_opt_string(body: &Value, path: &[&str]) -> Option<String> {
+    if path.is_empty() {
+        return None;
+    }
+    let mut current = body;
+    for key in path {
+        current = current.get(*key)?;
+    }
+    if let Some(s) = current.as_str() {
+        return normalize_non_empty(Some(s.to_string()));
+    }
+    if current.is_number() || current.is_boolean() {
+        return normalize_non_empty(Some(current.to_string()));
+    }
+    None
+}
+
+fn first_non_empty(candidates: Vec<Option<String>>) -> Option<String> {
+    for candidate in candidates {
+        if let Some(value) = normalize_non_empty(candidate) {
+            return Some(value);
+        }
+    }
+    None
+}
+
+fn extract_vk_profile_hints(body: &Value) -> VkProfileHints {
+    let vk_user_id = first_non_empty(vec![
+        json_path_opt_string(body, &["vk_user_id"]),
+        json_path_opt_string(body, &["user_id"]),
+        json_path_opt_string(body, &["sub"]),
+        json_path_opt_string(body, &["id"]),
+        json_path_opt_string(body, &["user", "vk_user_id"]),
+        json_path_opt_string(body, &["user", "user_id"]),
+        json_path_opt_string(body, &["user", "id"]),
+        json_path_opt_string(body, &["user", "uid"]),
+        json_path_opt_string(body, &["user", "sub"]),
+        json_path_opt_string(body, &["userInfo", "user_id"]),
+        json_path_opt_string(body, &["userInfo", "id"]),
+        json_path_opt_string(body, &["userInfo", "user", "user_id"]),
+        json_path_opt_string(body, &["userInfo", "user", "id"]),
+        json_path_opt_string(body, &["publicInfo", "user", "id"]),
+        json_path_opt_string(body, &["public_info", "user", "id"]),
+    ]);
+
+    let email = first_non_empty(vec![
+        json_path_opt_string(body, &["email"]),
+        json_path_opt_string(body, &["user", "email"]),
+        json_path_opt_string(body, &["userInfo", "email"]),
+        json_path_opt_string(body, &["userInfo", "user", "email"]),
+        json_path_opt_string(body, &["publicInfo", "email"]),
+        json_path_opt_string(body, &["publicInfo", "user", "email"]),
+        json_path_opt_string(body, &["public_info", "email"]),
+        json_path_opt_string(body, &["public_info", "user", "email"]),
+    ]);
+
+    let phone = first_non_empty(vec![
+        json_path_opt_string(body, &["phone"]),
+        json_path_opt_string(body, &["phone_number"]),
+        json_path_opt_string(body, &["user", "phone"]),
+        json_path_opt_string(body, &["user", "phone_number"]),
+        json_path_opt_string(body, &["userInfo", "phone"]),
+        json_path_opt_string(body, &["userInfo", "phone_number"]),
+        json_path_opt_string(body, &["userInfo", "user", "phone"]),
+        json_path_opt_string(body, &["userInfo", "user", "phone_number"]),
+    ]);
+
+    let first_name = first_non_empty(vec![
+        json_path_opt_string(body, &["first_name"]),
+        json_path_opt_string(body, &["firstName"]),
+        json_path_opt_string(body, &["given_name"]),
+        json_path_opt_string(body, &["givenName"]),
+        json_path_opt_string(body, &["user", "first_name"]),
+        json_path_opt_string(body, &["user", "firstName"]),
+        json_path_opt_string(body, &["user", "given_name"]),
+        json_path_opt_string(body, &["userInfo", "first_name"]),
+        json_path_opt_string(body, &["userInfo", "firstName"]),
+        json_path_opt_string(body, &["userInfo", "user", "first_name"]),
+        json_path_opt_string(body, &["userInfo", "user", "firstName"]),
+        json_path_opt_string(body, &["publicInfo", "user", "first_name"]),
+        json_path_opt_string(body, &["publicInfo", "user", "firstName"]),
+    ]);
+
+    let last_name = first_non_empty(vec![
+        json_path_opt_string(body, &["last_name"]),
+        json_path_opt_string(body, &["lastName"]),
+        json_path_opt_string(body, &["family_name"]),
+        json_path_opt_string(body, &["familyName"]),
+        json_path_opt_string(body, &["user", "last_name"]),
+        json_path_opt_string(body, &["user", "lastName"]),
+        json_path_opt_string(body, &["user", "family_name"]),
+        json_path_opt_string(body, &["userInfo", "last_name"]),
+        json_path_opt_string(body, &["userInfo", "lastName"]),
+        json_path_opt_string(body, &["userInfo", "user", "last_name"]),
+        json_path_opt_string(body, &["userInfo", "user", "lastName"]),
+        json_path_opt_string(body, &["publicInfo", "user", "last_name"]),
+        json_path_opt_string(body, &["publicInfo", "user", "lastName"]),
+    ]);
+
+    let display_name = first_non_empty(vec![
+        json_path_opt_string(body, &["name"]),
+        json_path_opt_string(body, &["display_name"]),
+        json_path_opt_string(body, &["displayName"]),
+        json_path_opt_string(body, &["user", "name"]),
+        json_path_opt_string(body, &["user", "display_name"]),
+        json_path_opt_string(body, &["user", "displayName"]),
+        json_path_opt_string(body, &["userInfo", "name"]),
+        json_path_opt_string(body, &["userInfo", "user", "name"]),
+        json_path_opt_string(body, &["publicInfo", "user", "name"]),
+    ]);
+
+    let composed_name = match (first_name, last_name) {
+        (Some(first), Some(last)) => normalize_non_empty(Some(format!("{} {}", first, last))),
+        (Some(first), None) => Some(first),
+        (None, Some(last)) => Some(last),
+        (None, None) => None,
+    };
+
+    let name = composed_name.or(display_name);
+
+    VkProfileHints {
+        vk_user_id,
+        name,
+        email,
+        phone,
+        raw: body.clone(),
+    }
+}
+
+fn sanitize_email_local_part(value: &str) -> String {
+    let mut out = String::new();
+    for ch in value.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+        } else if matches!(ch, '_' | '-' | '.') {
+            out.push(ch);
+        } else {
+            out.push('_');
+        }
+    }
+    let compact = out.trim_matches('_').to_string();
+    if compact.is_empty() {
+        "vkuser".to_string()
+    } else {
+        compact
+    }
+}
+
+fn vk_fallback_email(vk_user_id: Option<&str>) -> String {
+    let local = vk_user_id
+        .map(sanitize_email_local_part)
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| Uuid::new_v4().simple().to_string());
+    format!("vk_{}@vk.local", local)
+}
+
+fn find_user_id_by_email(conn: &Connection, email: &str) -> rusqlite::Result<Option<i64>> {
+    conn.query_row(
+        "SELECT id FROM users WHERE email = ?1 LIMIT 1",
+        params![email],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
+fn fetch_safe_user(conn: &Connection, user_id: i64) -> rusqlite::Result<Value> {
+    Ok(query_one(
+        conn,
+        "SELECT id, name, email, phone, role FROM users WHERE id = ?1",
+        &[&user_id],
+    )?
+    .unwrap_or_else(|| json!({})))
+}
+
+fn ensure_member_profile(conn: &Connection, name: &str, email: &str, phone: &str) -> rusqlite::Result<()> {
+    if email.trim().is_empty() {
+        return Ok(());
+    }
+
+    let member_id: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM members WHERE email = ?1 ORDER BY id DESC LIMIT 1",
+            params![email],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    let safe_name = if name.trim().is_empty() {
+        "VK Пользователь"
+    } else {
+        name
+    };
+
+    if let Some(id) = member_id {
+        conn.execute(
+            "UPDATE members
+             SET name = ?1,
+                 phone = CASE WHEN ?2 <> '' THEN ?2 ELSE phone END
+             WHERE id = ?3",
+            params![safe_name, phone.trim(), id],
+        )?;
+    } else {
+        conn.execute(
+            "INSERT INTO members (name,email,phone,membership,joinDate,status) VALUES (?1,?2,?3,?4,?5,?6)",
+            params![safe_name, email, phone.trim(), "Базовый", now_date(), "Активный"],
+        )?;
+    }
+    Ok(())
+}
+
+fn update_user_profile(
+    conn: &Connection,
+    user_id: i64,
+    name_hint: Option<String>,
+    email_hint: Option<String>,
+    phone_hint: Option<String>,
+) -> rusqlite::Result<()> {
+    let current = fetch_safe_user(conn, user_id)?;
+    let mut next_name = value_string(&current, "name");
+    let mut next_email = value_string(&current, "email");
+    let mut next_phone = value_string(&current, "phone");
+
+    if let Some(name) = normalize_non_empty(name_hint) {
+        next_name = name;
+    }
+    if next_name.trim().is_empty() {
+        next_name = "VK Пользователь".to_string();
+    }
+
+    if let Some(email) = normalize_non_empty(email_hint) {
+        if email != next_email {
+            let existing = find_user_id_by_email(conn, &email)?;
+            if existing.is_none() || existing == Some(user_id) {
+                next_email = email;
+            }
+        }
+    }
+
+    if let Some(phone) = normalize_non_empty(phone_hint) {
+        next_phone = phone;
+    }
+
+    conn.execute(
+        "UPDATE users SET name = ?1, email = ?2, phone = ?3 WHERE id = ?4",
+        params![next_name, next_email, next_phone, user_id],
+    )?;
+
+    let _ = ensure_member_profile(conn, &next_name, &next_email, &next_phone);
+    Ok(())
+}
+
+fn find_user_by_vk_id(conn: &Connection, vk_user_id: &str) -> rusqlite::Result<Option<Value>> {
+    query_one(
+        conn,
+        "SELECT u.id, u.name, u.email, u.phone, u.role
+         FROM vk_accounts va
+         JOIN users u ON u.id = va.userId
+         WHERE va.vkUserId = ?1
+         LIMIT 1",
+        &[&vk_user_id],
+    )
+}
+
+fn upsert_vk_account(
+    conn: &Connection,
+    vk_user_id: &str,
+    user_id: i64,
+    raw_profile: &Value,
+) -> rusqlite::Result<()> {
+    let profile_json = serde_json::to_string(raw_profile).unwrap_or_else(|_| "{}".to_string());
+    let now = now_iso();
+    conn.execute(
+        "DELETE FROM vk_accounts WHERE userId = ?1 AND vkUserId != ?2",
+        params![user_id, vk_user_id],
+    )?;
+    conn.execute(
+        "INSERT INTO vk_accounts (vkUserId, userId, profileJson, createdAt, updatedAt)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(vkUserId) DO UPDATE SET
+           userId = excluded.userId,
+           profileJson = excluded.profileJson,
+           updatedAt = excluded.updatedAt",
+        params![vk_user_id, user_id, profile_json, now, now],
+    )?;
+    Ok(())
+}
+
+fn ensure_unique_email(conn: &Connection, preferred: &str) -> rusqlite::Result<String> {
+    let (local_raw, domain_raw) = preferred
+        .split_once('@')
+        .unwrap_or((preferred, "vk.local"));
+    let local = sanitize_email_local_part(local_raw);
+    let domain = if domain_raw.trim().is_empty() {
+        "vk.local".to_string()
+    } else {
+        domain_raw.trim().to_lowercase()
+    };
+
+    let mut candidate = format!("{}@{}", local, domain);
+    let mut suffix = 2;
+    while find_user_id_by_email(conn, &candidate)?.is_some() {
+        candidate = format!("{}+{}@{}", local, suffix, domain);
+        suffix += 1;
+    }
+    Ok(candidate)
+}
+
+fn ensure_vk_profile_user(conn: &Connection, hints: &VkProfileHints) -> rusqlite::Result<Value> {
+    if let Some(vk_user_id) = hints.vk_user_id.clone() {
+        if let Some(user) = find_user_by_vk_id(conn, &vk_user_id)? {
+            let user_id = value_i64(&user, "id");
+            update_user_profile(
+                conn,
+                user_id,
+                hints.name.clone(),
+                hints.email.clone(),
+                hints.phone.clone(),
+            )?;
+            let _ = upsert_vk_account(conn, &vk_user_id, user_id, &hints.raw);
+            return fetch_safe_user(conn, user_id);
+        }
+    }
+
+    if let Some(email) = normalize_non_empty(hints.email.clone()) {
+        if let Some(user_id) = find_user_id_by_email(conn, &email)? {
+            update_user_profile(
+                conn,
+                user_id,
+                hints.name.clone(),
+                Some(email.clone()),
+                hints.phone.clone(),
+            )?;
+            if let Some(vk_user_id) = hints.vk_user_id.clone() {
+                let _ = upsert_vk_account(conn, &vk_user_id, user_id, &hints.raw);
+            }
+            return fetch_safe_user(conn, user_id);
+        }
+    }
+
+    let name = normalize_non_empty(hints.name.clone()).unwrap_or_else(|| "VK Пользователь".to_string());
+    let preferred_email = normalize_non_empty(hints.email.clone())
+        .unwrap_or_else(|| vk_fallback_email(hints.vk_user_id.as_deref()));
+    let email = ensure_unique_email(conn, &preferred_email)?;
+    let phone = normalize_non_empty(hints.phone.clone()).unwrap_or_default();
+    let password = hash_password_raw("vk_oauth").unwrap_or_else(|_| generate_token());
+
+    conn.execute(
+        "INSERT INTO users (name,email,phone,role,password) VALUES (?1,?2,?3,?4,?5)",
+        params![name, email, phone, "Клиент", password],
+    )?;
+
+    let user_id = conn.last_insert_rowid();
+    if let Some(vk_user_id) = hints.vk_user_id.clone() {
+        let _ = upsert_vk_account(conn, &vk_user_id, user_id, &hints.raw);
+    }
+    let _ = ensure_member_profile(conn, &name, &email, &phone);
+    fetch_safe_user(conn, user_id)
+}
+
 fn ensure_vk_demo_user(conn: &Connection, name_hint: Option<String>, email_hint: Option<String>) -> rusqlite::Result<Value> {
     let email = email_hint.unwrap_or_else(|| "vk_demo@vk.com".to_string());
     let existing = query_one(
@@ -1898,34 +2295,9 @@ async fn auth_vk_demo(State(state): State<AppState>) -> ApiResult<Json<Value>> {
 }
 
 async fn auth_vk_complete(State(state): State<AppState>, Json(body): Json<Value>) -> ApiResult<Json<Value>> {
-    let first_name = body
-        .get("user")
-        .and_then(|u| u.get("first_name"))
-        .and_then(Value::as_str)
-        .unwrap_or("VK");
-    let last_name = body
-        .get("user")
-        .and_then(|u| u.get("last_name"))
-        .and_then(Value::as_str)
-        .unwrap_or("Пользователь");
-    let full_name = format!("{} {}", first_name, last_name).trim().to_string();
-    let email = body_opt_string(&body, "email").or_else(|| {
-        body.get("user")
-            .and_then(|u| u.get("email"))
-            .and_then(Value::as_str)
-            .map(|s| s.to_string())
-    });
-
+    let hints = extract_vk_profile_hints(&body);
     let conn = lock_db(&state)?;
-    let user = ensure_vk_demo_user(
-        &conn,
-        Some(if full_name.is_empty() {
-            "VK Пользователь".to_string()
-        } else {
-            full_name
-        }),
-        email,
-    )
+    let user = ensure_vk_profile_user(&conn, &hints)
     .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "VK auth failed"))?;
 
     let token = issue_session(&conn, value_i64(&user, "id"))

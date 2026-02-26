@@ -136,9 +136,69 @@ export default function Auth({ session, setSession }) {
     })();
   }
 
+  async function finalizeVkAuth(VKID, code, deviceId, payloadUser = null) {
+    const data = await VKID.Auth.exchangeCode(code, deviceId);
+
+    let profile = payloadUser || null;
+
+    if ((!profile || typeof profile !== 'object') && data?.access_token && typeof VKID.Auth?.userInfo === 'function') {
+      try {
+        const userInfo = await VKID.Auth.userInfo(data.access_token);
+        profile = userInfo?.user || userInfo || null;
+      } catch (e) {
+        console.warn('VK userInfo failed', e);
+      }
+    }
+
+    if ((!profile || typeof profile !== 'object') && data?.id_token && typeof VKID.Auth?.publicInfo === 'function') {
+      try {
+        const publicInfo = await VKID.Auth.publicInfo(data.id_token);
+        profile = publicInfo?.user || publicInfo || null;
+      } catch (e) {
+        console.warn('VK publicInfo failed', e);
+      }
+    }
+
+    const res = await completeVkOneTap({
+      ...data,
+      code,
+      device_id: deviceId,
+      user: profile || null,
+    });
+
+    try { localStorage.setItem('auth_token', res.token); } catch (e) {}
+    const nextSession = { ...res.user, loginAt: new Date().toISOString() };
+    setSession(nextSession);
+    saveSession(nextSession);
+    setMessage('Вход через VK выполнен.');
+  }
+
   async function handleVkOAuth() {
-    const base = import.meta.env.VITE_API_BASE || '/api';
-    window.location.href = `${base}/auth/vk/login`;
+    setMessage('');
+    const VKID = window.VKIDSDK || window.VKID;
+    if (!VKID || !VKID.Auth || typeof VKID.Auth.login !== 'function') {
+      setMessage('VK SDK не загружен. Проверьте блокировщик рекламы или сеть.');
+      return;
+    }
+
+    try {
+      const appId = Number(import.meta.env.VITE_VK_APP_ID || 54440927);
+      VKID.Config.init({
+        app: appId,
+        redirectUrl: 'https://sportcomplecspro.ru/api/auth/vk/callback',
+        responseMode: VKID.ConfigResponseMode.Callback,
+        source: VKID.ConfigSource.LOWCODE,
+        scope: '',
+      });
+      const payload = await VKID.Auth.login();
+      const code = payload?.code;
+      const deviceId = payload?.device_id;
+      if (!code || !deviceId) throw new Error('Missing VK code/device_id');
+      await finalizeVkAuth(VKID, code, deviceId, payload?.user || null);
+    } catch (e) {
+      console.error('VK OAuth login failed', e);
+      setMessage('Не удалось выполнить вход через VK.');
+    }
   }
 
   useEffect(() => {
@@ -178,14 +238,9 @@ export default function Auth({ session, setSession }) {
         try {
           const code = payload.code;
           const deviceId = payload.device_id;
-          const data = await VKID.Auth.exchangeCode(code, deviceId);
-          const res = await completeVkOneTap({ ...data, code, device_id: deviceId, user: payload.user || null });
-          try { localStorage.setItem('auth_token', res.token); } catch (e) {}
-          const nextSession = { ...res.user, loginAt: new Date().toISOString() };
-          setSession(nextSession);
-          saveSession(nextSession);
-          setMessage('Вход через VK выполнен.');
+          await finalizeVkAuth(VKID, code, deviceId, payload.user || null);
         } catch (e) {
+          console.error('VK One Tap login failed', e);
           setMessage('Не удалось выполнить вход через VK.');
         }
       });
