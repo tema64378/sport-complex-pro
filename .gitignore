@@ -8,3 +8,4 @@ dist/
 server/database.db
 rust-server/target/
 rust-server/data.db
+rust-server/backups/

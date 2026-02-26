@@ -8,14 +8,21 @@ use axum::{
     routing::{delete, get, patch, post, put},
     Json, Router,
 };
+use argon2::{
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Argon2,
+};
 use chrono::{
     DateTime, Datelike, Duration as ChronoDuration, Local, NaiveDate, NaiveDateTime, TimeZone, Utc,
 };
 use rusqlite::{params, types::ValueRef, Connection, OptionalExtension, ToSql};
+use rand_core::OsRng;
 use serde_json::{json, Map, Number, Value};
 use std::{
     collections::{BTreeMap, HashMap},
     env,
+    fs,
+    path::PathBuf,
     sync::{Arc, Mutex, MutexGuard},
     time::Duration,
 };
@@ -61,6 +68,25 @@ impl IntoResponse for ApiError {
 
 type ApiResult<T> = Result<T, ApiError>;
 
+fn map_db_write_error(err: rusqlite::Error, fallback: &str) -> ApiError {
+    match err {
+        rusqlite::Error::SqliteFailure(_, maybe_msg) => {
+            if let Some(msg) = maybe_msg {
+                let lowered = msg.to_lowercase();
+                if lowered.contains("constraint")
+                    || lowered.contains("references missing")
+                    || lowered.contains("must be >=")
+                    || lowered.contains("must be")
+                {
+                    return ApiError::new(StatusCode::BAD_REQUEST, msg);
+                }
+            }
+            ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, fallback)
+        }
+        _ => ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, fallback),
+    }
+}
+
 fn now_iso() -> String {
     Utc::now().to_rfc3339()
 }
@@ -79,6 +105,40 @@ fn expires_in_7_days_iso() -> String {
 
 fn generate_token() -> String {
     Uuid::new_v4().simple().to_string()
+}
+
+fn is_argon2_hash(value: &str) -> bool {
+    value.starts_with("$argon2")
+}
+
+fn hash_password_raw(password: &str) -> Result<String, argon2::password_hash::Error> {
+    let salt = SaltString::generate(&mut OsRng);
+    Ok(Argon2::default()
+        .hash_password(password.as_bytes(), &salt)?
+        .to_string())
+}
+
+fn hash_password_api(password: &str) -> ApiResult<String> {
+    hash_password_raw(password)
+        .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Password hashing failed"))
+}
+
+fn verify_password(password: &str, stored: &str) -> bool {
+    if is_argon2_hash(stored) {
+        return PasswordHash::new(stored)
+            .ok()
+            .and_then(|hash| {
+                Argon2::default()
+                    .verify_password(password.as_bytes(), &hash)
+                    .ok()
+            })
+            .is_some();
+    }
+    stored == password
+}
+
+fn needs_password_upgrade(stored: &str) -> bool {
+    !is_argon2_hash(stored)
 }
 
 fn to_json_value(v: ValueRef<'_>) -> Value {
@@ -140,16 +200,6 @@ fn value_i64(v: &Value, key: &str) -> i64 {
         return s.parse::<i64>().unwrap_or(0);
     }
     0
-}
-
-fn value_f64(v: &Value, key: &str) -> f64 {
-    if let Some(n) = v.get(key).and_then(Value::as_f64) {
-        return n;
-    }
-    if let Some(s) = v.get(key).and_then(Value::as_str) {
-        return s.parse::<f64>().unwrap_or(0.0);
-    }
-    0.0
 }
 
 fn value_bool(v: &Value, key: &str) -> bool {
@@ -379,6 +429,294 @@ fn table_count(conn: &Connection, table: &str) -> rusqlite::Result<i64> {
     conn.query_row(&sql, [], |row| row.get(0))
 }
 
+fn ensure_migrations_table(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS schema_migrations (
+            version INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            applied_at TEXT NOT NULL
+        );",
+    )
+}
+
+fn migration_exists(conn: &Connection, version: i64) -> rusqlite::Result<bool> {
+    let exists: Option<i64> = conn
+        .query_row(
+            "SELECT version FROM schema_migrations WHERE version = ?1 LIMIT 1",
+            params![version],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(exists.is_some())
+}
+
+fn apply_migration<F>(
+    conn: &Connection,
+    version: i64,
+    name: &str,
+    migration: F,
+) -> rusqlite::Result<()>
+where
+    F: FnOnce(&Connection) -> rusqlite::Result<()>,
+{
+    if migration_exists(conn, version)? {
+        return Ok(());
+    }
+
+    migration(conn)?;
+    conn.execute(
+        "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?1, ?2, ?3)",
+        params![version, name, now_iso()],
+    )?;
+    Ok(())
+}
+
+fn migrate_v2_hash_existing_passwords(conn: &Connection) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare("SELECT id, password FROM users")?;
+    let users = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    for (id, password) in users {
+        if password.is_empty() || is_argon2_hash(&password) {
+            continue;
+        }
+        if let Ok(hashed) = hash_password_raw(&password) {
+            conn.execute(
+                "UPDATE users SET password = ?1 WHERE id = ?2",
+                params![hashed, id],
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn migrate_v3_create_indexes(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "
+        CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+        CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
+        CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(userId);
+
+        CREATE INDEX IF NOT EXISTS idx_members_email ON members(email);
+        CREATE INDEX IF NOT EXISTS idx_members_status ON members(status);
+        CREATE INDEX IF NOT EXISTS idx_members_membership ON members(membership);
+
+        CREATE INDEX IF NOT EXISTS idx_bookings_member ON bookings(member);
+        CREATE INDEX IF NOT EXISTS idx_bookings_class_id ON bookings(classId);
+        CREATE INDEX IF NOT EXISTS idx_bookings_date ON bookings(date);
+        CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(status);
+
+        CREATE INDEX IF NOT EXISTS idx_payments_member ON payments(member);
+        CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
+        CREATE INDEX IF NOT EXISTS idx_payments_date ON payments(date);
+        CREATE INDEX IF NOT EXISTS idx_payments_receipt_id ON payments(receiptId);
+
+        CREATE INDEX IF NOT EXISTS idx_notifications_ref ON notifications(refType, refId);
+        CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(createdAt);
+
+        CREATE INDEX IF NOT EXISTS idx_receipts_member_id ON receipts(memberId);
+        CREATE INDEX IF NOT EXISTS idx_receipts_created ON receipts(createdAt);
+
+        CREATE INDEX IF NOT EXISTS idx_crm_notes_member_id ON crm_notes(memberId);
+        CREATE INDEX IF NOT EXISTS idx_deals_stage ON deals(stage);
+        CREATE INDEX IF NOT EXISTS idx_deals_manager ON deals(manager);
+        ",
+    )
+}
+
+fn migrate_v4_integrity_triggers(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "
+        DROP TRIGGER IF EXISTS trg_sessions_user_fk_insert;
+        DROP TRIGGER IF EXISTS trg_sessions_user_fk_update;
+        DROP TRIGGER IF EXISTS trg_classes_trainer_fk_insert;
+        DROP TRIGGER IF EXISTS trg_classes_trainer_fk_update;
+        DROP TRIGGER IF EXISTS trg_bookings_class_fk_insert;
+        DROP TRIGGER IF EXISTS trg_bookings_class_fk_update;
+        DROP TRIGGER IF EXISTS trg_payments_receipt_fk_insert;
+        DROP TRIGGER IF EXISTS trg_payments_receipt_fk_update;
+        DROP TRIGGER IF EXISTS trg_crm_notes_member_fk_insert;
+        DROP TRIGGER IF EXISTS trg_crm_notes_member_fk_update;
+        DROP TRIGGER IF EXISTS trg_receipts_member_fk_insert;
+        DROP TRIGGER IF EXISTS trg_receipts_member_fk_update;
+        DROP TRIGGER IF EXISTS trg_payments_amount_insert;
+        DROP TRIGGER IF EXISTS trg_payments_amount_update;
+
+        CREATE TRIGGER trg_sessions_user_fk_insert
+        BEFORE INSERT ON sessions
+        FOR EACH ROW
+        WHEN NEW.userId IS NULL OR NOT EXISTS (SELECT 1 FROM users WHERE id = NEW.userId)
+        BEGIN
+            SELECT RAISE(ABORT, 'sessions.userId references missing user');
+        END;
+
+        CREATE TRIGGER trg_sessions_user_fk_update
+        BEFORE UPDATE OF userId ON sessions
+        FOR EACH ROW
+        WHEN NEW.userId IS NULL OR NOT EXISTS (SELECT 1 FROM users WHERE id = NEW.userId)
+        BEGIN
+            SELECT RAISE(ABORT, 'sessions.userId references missing user');
+        END;
+
+        CREATE TRIGGER trg_classes_trainer_fk_insert
+        BEFORE INSERT ON classes
+        FOR EACH ROW
+        WHEN NEW.trainerId IS NOT NULL
+             AND NEW.trainerId != 0
+             AND NOT EXISTS (SELECT 1 FROM trainers WHERE id = NEW.trainerId)
+        BEGIN
+            SELECT RAISE(ABORT, 'classes.trainerId references missing trainer');
+        END;
+
+        CREATE TRIGGER trg_classes_trainer_fk_update
+        BEFORE UPDATE OF trainerId ON classes
+        FOR EACH ROW
+        WHEN NEW.trainerId IS NOT NULL
+             AND NEW.trainerId != 0
+             AND NOT EXISTS (SELECT 1 FROM trainers WHERE id = NEW.trainerId)
+        BEGIN
+            SELECT RAISE(ABORT, 'classes.trainerId references missing trainer');
+        END;
+
+        CREATE TRIGGER trg_bookings_class_fk_insert
+        BEFORE INSERT ON bookings
+        FOR EACH ROW
+        WHEN NEW.classId IS NOT NULL
+             AND NEW.classId != 0
+             AND NOT EXISTS (SELECT 1 FROM classes WHERE id = NEW.classId)
+        BEGIN
+            SELECT RAISE(ABORT, 'bookings.classId references missing class');
+        END;
+
+        CREATE TRIGGER trg_bookings_class_fk_update
+        BEFORE UPDATE OF classId ON bookings
+        FOR EACH ROW
+        WHEN NEW.classId IS NOT NULL
+             AND NEW.classId != 0
+             AND NOT EXISTS (SELECT 1 FROM classes WHERE id = NEW.classId)
+        BEGIN
+            SELECT RAISE(ABORT, 'bookings.classId references missing class');
+        END;
+
+        CREATE TRIGGER trg_payments_receipt_fk_insert
+        BEFORE INSERT ON payments
+        FOR EACH ROW
+        WHEN NEW.receiptId IS NOT NULL
+             AND NEW.receiptId != 0
+             AND NOT EXISTS (SELECT 1 FROM receipts WHERE id = NEW.receiptId)
+        BEGIN
+            SELECT RAISE(ABORT, 'payments.receiptId references missing receipt');
+        END;
+
+        CREATE TRIGGER trg_payments_receipt_fk_update
+        BEFORE UPDATE OF receiptId ON payments
+        FOR EACH ROW
+        WHEN NEW.receiptId IS NOT NULL
+             AND NEW.receiptId != 0
+             AND NOT EXISTS (SELECT 1 FROM receipts WHERE id = NEW.receiptId)
+        BEGIN
+            SELECT RAISE(ABORT, 'payments.receiptId references missing receipt');
+        END;
+
+        CREATE TRIGGER trg_crm_notes_member_fk_insert
+        BEFORE INSERT ON crm_notes
+        FOR EACH ROW
+        WHEN NEW.memberId IS NULL
+             OR NOT EXISTS (SELECT 1 FROM members WHERE id = NEW.memberId)
+        BEGIN
+            SELECT RAISE(ABORT, 'crm_notes.memberId references missing member');
+        END;
+
+        CREATE TRIGGER trg_crm_notes_member_fk_update
+        BEFORE UPDATE OF memberId ON crm_notes
+        FOR EACH ROW
+        WHEN NEW.memberId IS NULL
+             OR NOT EXISTS (SELECT 1 FROM members WHERE id = NEW.memberId)
+        BEGIN
+            SELECT RAISE(ABORT, 'crm_notes.memberId references missing member');
+        END;
+
+        CREATE TRIGGER trg_receipts_member_fk_insert
+        BEFORE INSERT ON receipts
+        FOR EACH ROW
+        WHEN NEW.memberId IS NULL
+             OR NEW.memberId = 0
+             OR NOT EXISTS (SELECT 1 FROM members WHERE id = NEW.memberId)
+        BEGIN
+            SELECT RAISE(ABORT, 'receipts.memberId references missing member');
+        END;
+
+        CREATE TRIGGER trg_receipts_member_fk_update
+        BEFORE UPDATE OF memberId ON receipts
+        FOR EACH ROW
+        WHEN NEW.memberId IS NULL
+             OR NEW.memberId = 0
+             OR NOT EXISTS (SELECT 1 FROM members WHERE id = NEW.memberId)
+        BEGIN
+            SELECT RAISE(ABORT, 'receipts.memberId references missing member');
+        END;
+
+        CREATE TRIGGER trg_payments_amount_insert
+        BEFORE INSERT ON payments
+        FOR EACH ROW
+        WHEN NEW.amount IS NULL OR NEW.amount < 0
+        BEGIN
+            SELECT RAISE(ABORT, 'payments.amount must be >= 0');
+        END;
+
+        CREATE TRIGGER trg_payments_amount_update
+        BEFORE UPDATE OF amount ON payments
+        FOR EACH ROW
+        WHEN NEW.amount IS NULL OR NEW.amount < 0
+        BEGIN
+            SELECT RAISE(ABORT, 'payments.amount must be >= 0');
+        END;
+        ",
+    )
+}
+
+fn run_sqlite_backup(
+    conn: &Connection,
+    backup_dir: &str,
+    keep_last: usize,
+) -> Result<PathBuf, String> {
+    fs::create_dir_all(backup_dir).map_err(|e| format!("backup mkdir failed: {}", e))?;
+    let backup_file = PathBuf::from(backup_dir).join(format!(
+        "backup_{}.db",
+        Local::now().format("%Y%m%d_%H%M%S")
+    ));
+    let escaped_path = backup_file.to_string_lossy().replace('\'', "''");
+    let vacuum_sql = format!("VACUUM INTO '{}';", escaped_path);
+    conn.execute_batch(&vacuum_sql)
+        .map_err(|e| format!("backup vacuum failed: {}", e))?;
+
+    let mut backups = fs::read_dir(backup_dir)
+        .map_err(|e| format!("backup list failed: {}", e))?
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|path| {
+            path.file_name()
+                .and_then(|s| s.to_str())
+                .map(|name| name.starts_with("backup_") && name.ends_with(".db"))
+                .unwrap_or(false)
+        })
+        .collect::<Vec<_>>();
+
+    backups.sort();
+    if keep_last > 0 && backups.len() > keep_last {
+        for old in backups.iter().take(backups.len() - keep_last) {
+            let _ = fs::remove_file(old);
+        }
+    }
+
+    Ok(backup_file)
+}
+
 fn ensure_notification(
     conn: &Connection,
     ntype: &str,
@@ -492,17 +830,17 @@ fn recalculate_class_enrollment(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-fn init_db(conn: &Connection) -> rusqlite::Result<()> {
+fn migrate_v1_base_schema_and_seed(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         "
         CREATE TABLE IF NOT EXISTS members (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT,
-          email TEXT,
-          phone TEXT,
-          membership TEXT,
-          joinDate TEXT,
-          status TEXT
+          name TEXT NOT NULL,
+          email TEXT NOT NULL,
+          phone TEXT NOT NULL DEFAULT '',
+          membership TEXT NOT NULL,
+          joinDate TEXT NOT NULL,
+          status TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS trainers (
@@ -518,51 +856,55 @@ fn init_db(conn: &Connection) -> rusqlite::Result<()> {
 
         CREATE TABLE IF NOT EXISTS classes (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT,
+          name TEXT NOT NULL,
           trainerId INTEGER,
-          trainerName TEXT,
-          schedule TEXT,
-          capacity INTEGER,
-          enrolled INTEGER,
-          level TEXT
+          trainerName TEXT NOT NULL DEFAULT '',
+          schedule TEXT NOT NULL DEFAULT '',
+          capacity INTEGER NOT NULL DEFAULT 0,
+          enrolled INTEGER NOT NULL DEFAULT 0,
+          level TEXT NOT NULL,
+          FOREIGN KEY(trainerId) REFERENCES trainers(id) ON DELETE SET NULL
         );
 
         CREATE TABLE IF NOT EXISTS bookings (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          member TEXT,
+          member TEXT NOT NULL,
           classId INTEGER,
-          className TEXT,
-          date TEXT,
-          time TEXT,
-          status TEXT
+          className TEXT NOT NULL,
+          date TEXT NOT NULL,
+          time TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'Подтверждено',
+          FOREIGN KEY(classId) REFERENCES classes(id) ON DELETE SET NULL
         );
 
         CREATE TABLE IF NOT EXISTS payments (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          member TEXT,
-          amount INTEGER,
-          method TEXT,
-          date TEXT,
-          status TEXT,
+          member TEXT NOT NULL,
+          amount INTEGER NOT NULL CHECK(amount >= 0),
+          method TEXT NOT NULL,
+          date TEXT NOT NULL,
+          status TEXT NOT NULL,
           receiptId INTEGER,
-          provider TEXT
+          provider TEXT,
+          FOREIGN KEY(receiptId) REFERENCES receipts(id) ON DELETE SET NULL
         );
 
         CREATE TABLE IF NOT EXISTS users (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT,
-          email TEXT UNIQUE,
-          phone TEXT,
-          role TEXT,
-          password TEXT
+          name TEXT NOT NULL,
+          email TEXT NOT NULL UNIQUE,
+          phone TEXT NOT NULL DEFAULT '',
+          role TEXT NOT NULL,
+          password TEXT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS sessions (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          userId INTEGER,
-          token TEXT UNIQUE,
-          createdAt TEXT,
-          expiresAt TEXT
+          userId INTEGER NOT NULL,
+          token TEXT NOT NULL UNIQUE,
+          createdAt TEXT NOT NULL,
+          expiresAt TEXT NOT NULL,
+          FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS services (
@@ -596,9 +938,10 @@ fn init_db(conn: &Connection) -> rusqlite::Result<()> {
 
         CREATE TABLE IF NOT EXISTS crm_notes (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          memberId INTEGER,
-          text TEXT,
-          createdAt TEXT
+          memberId INTEGER NOT NULL,
+          text TEXT NOT NULL,
+          createdAt TEXT NOT NULL,
+          FOREIGN KEY(memberId) REFERENCES members(id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS calendar_slots (
@@ -613,16 +956,18 @@ fn init_db(conn: &Connection) -> rusqlite::Result<()> {
 
         CREATE TABLE IF NOT EXISTS receipts (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          memberId INTEGER,
-          memberName TEXT,
-          membership TEXT,
-          itemsJson TEXT,
-          subtotal INTEGER,
-          discount INTEGER,
-          total INTEGER,
-          createdAt TEXT,
-          note TEXT,
+          memberId INTEGER NOT NULL,
+          memberName TEXT NOT NULL,
+          membership TEXT NOT NULL,
+          itemsJson TEXT NOT NULL DEFAULT '[]',
+          subtotal INTEGER NOT NULL DEFAULT 0 CHECK(subtotal >= 0),
+          discount INTEGER NOT NULL DEFAULT 0 CHECK(discount >= 0),
+          total INTEGER NOT NULL DEFAULT 0 CHECK(total >= 0),
+          createdAt TEXT NOT NULL,
+          note TEXT NOT NULL DEFAULT '',
           paymentId INTEGER
+          ,
+          FOREIGN KEY(memberId) REFERENCES members(id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS deals (
@@ -774,6 +1119,8 @@ fn init_db(conn: &Connection) -> rusqlite::Result<()> {
     }
 
     if table_count(conn, "users")? == 0 {
+        let admin_password = hash_password_raw("admin123").unwrap_or_else(|_| "admin123".to_string());
+        let coach_password = hash_password_raw("coach123").unwrap_or_else(|_| "coach123".to_string());
         conn.execute(
             "INSERT INTO users (name,email,phone,role,password) VALUES (?1,?2,?3,?4,?5)",
             params![
@@ -781,7 +1128,7 @@ fn init_db(conn: &Connection) -> rusqlite::Result<()> {
                 "admin@sportcomplex.com",
                 "+7 (495) 123-45-67",
                 "Администратор",
-                "admin123"
+                admin_password
             ],
         )?;
         conn.execute(
@@ -791,7 +1138,7 @@ fn init_db(conn: &Connection) -> rusqlite::Result<()> {
                 "coach.maria@sportcomplex.com",
                 "+7 (910) 555-22-11",
                 "Тренер",
-                "coach123"
+                coach_password
             ],
         )?;
     }
@@ -1087,6 +1434,40 @@ fn init_db(conn: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+fn init_db(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "
+        PRAGMA foreign_keys = ON;
+        PRAGMA journal_mode = WAL;
+        ",
+    )?;
+    ensure_migrations_table(conn)?;
+
+    apply_migration(
+        conn,
+        1,
+        "base_schema_and_seed",
+        migrate_v1_base_schema_and_seed,
+    )?;
+    apply_migration(
+        conn,
+        2,
+        "hash_existing_passwords",
+        migrate_v2_hash_existing_passwords,
+    )?;
+    apply_migration(conn, 3, "create_indexes", migrate_v3_create_indexes)?;
+    apply_migration(
+        conn,
+        4,
+        "integrity_triggers_and_checks",
+        migrate_v4_integrity_triggers,
+    )?;
+
+    recalculate_class_enrollment(conn)?;
+    generate_notifications(conn)?;
+    Ok(())
+}
+
 fn build_analytics(conn: &Connection) -> rusqlite::Result<Value> {
     let members = query_rows(conn, "SELECT * FROM members", &[])?;
     let trainers_count: i64 = conn.query_row("SELECT COUNT(*) FROM trainers", [], |r| r.get(0))?;
@@ -1355,8 +1736,9 @@ async fn auth_register(State(state): State<AppState>, Json(body): Json<Value>) -
         .ok_or_else(|| ApiError::new(StatusCode::BAD_REQUEST, "Missing fields"))?;
     let email = body_opt_string(&body, "email")
         .ok_or_else(|| ApiError::new(StatusCode::BAD_REQUEST, "Missing fields"))?;
-    let password = body_opt_string(&body, "password")
+    let password_plain = body_opt_string(&body, "password")
         .ok_or_else(|| ApiError::new(StatusCode::BAD_REQUEST, "Missing fields"))?;
+    let password = hash_password_api(&password_plain)?;
     let phone = body_string(&body, "phone", "");
 
     let conn = lock_db(&state)?;
@@ -1373,7 +1755,7 @@ async fn auth_register(State(state): State<AppState>, Json(body): Json<Value>) -
         "INSERT INTO users (name,email,phone,role,password) VALUES (?1,?2,?3,?4,?5)",
         params![name, email, phone, "Клиент", password],
     )
-    .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Register failed"))?;
+    .map_err(|e| map_db_write_error(e, "Register failed"))?;
 
     let user_id = conn.last_insert_rowid();
     let token = generate_token();
@@ -1422,11 +1804,21 @@ async fn auth_login(State(state): State<AppState>, Json(body): Json<Value>) -> A
     .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Login failed"))?;
 
     let user = user.ok_or_else(|| ApiError::new(StatusCode::UNAUTHORIZED, "Invalid credentials"))?;
-    if value_string(&user, "password") != password {
+    let stored_password = value_string(&user, "password");
+    if !verify_password(&password, &stored_password) {
         return Err(ApiError::new(StatusCode::UNAUTHORIZED, "Invalid credentials"));
     }
 
     let user_id = value_i64(&user, "id");
+    if needs_password_upgrade(&stored_password) {
+        if let Ok(new_hash) = hash_password_raw(&password) {
+            let _ = conn.execute(
+                "UPDATE users SET password = ?1 WHERE id = ?2",
+                params![new_hash, user_id],
+            );
+        }
+    }
+
     let token = generate_token();
     conn.execute(
         "INSERT INTO sessions (userId, token, createdAt, expiresAt) VALUES (?1,?2,?3,?4)",
@@ -1458,9 +1850,10 @@ fn ensure_vk_demo_user(conn: &Connection, name_hint: Option<String>, email_hint:
     }
 
     let name = name_hint.unwrap_or_else(|| "VK Пользователь".to_string());
+    let demo_password = hash_password_raw("vk_oauth").unwrap_or_else(|_| "vk_oauth".to_string());
     conn.execute(
         "INSERT INTO users (name,email,phone,role,password) VALUES (?1,?2,?3,?4,?5)",
-        params![name, email, "", "Клиент", "vk_oauth"],
+        params![name, email, "", "Клиент", demo_password],
     )?;
     let user_id = conn.last_insert_rowid();
     let user = query_one(
@@ -1605,8 +1998,9 @@ async fn users_create(
         .ok_or_else(|| ApiError::new(StatusCode::BAD_REQUEST, "Missing fields"))?;
     let email = body_opt_string(&body, "email")
         .ok_or_else(|| ApiError::new(StatusCode::BAD_REQUEST, "Missing fields"))?;
-    let password = body_opt_string(&body, "password")
+    let password_plain = body_opt_string(&body, "password")
         .ok_or_else(|| ApiError::new(StatusCode::BAD_REQUEST, "Missing fields"))?;
+    let password = hash_password_api(&password_plain)?;
     let phone = body_string(&body, "phone", "");
     let role = body_string(&body, "role", "Клиент");
 
@@ -1623,7 +2017,7 @@ async fn users_create(
         "INSERT INTO users (name,email,phone,role,password) VALUES (?1,?2,?3,?4,?5)",
         params![name, email, phone, role, password],
     )
-    .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Users create failed"))?;
+    .map_err(|e| map_db_write_error(e, "Users create failed"))?;
     let id = conn.last_insert_rowid();
 
     let created = query_one(
@@ -1671,13 +2065,17 @@ async fn users_update(
     let next_phone = body_opt_string(&body, "phone").unwrap_or_else(|| value_string(&existing, "phone"));
     let existing_role = value_string(&existing, "role");
     let next_role = body_opt_string(&body, "role").unwrap_or_else(|| existing_role.clone());
-    let next_password = body_opt_string(&body, "password");
+    let next_password = if let Some(password) = body_opt_string(&body, "password") {
+        Some(hash_password_api(&password)?)
+    } else {
+        None
+    };
 
     conn.execute(
         "UPDATE users SET name = ?1, email = ?2, phone = ?3, role = ?4, password = COALESCE(?5, password) WHERE id = ?6",
         params![next_name, next_email, next_phone, next_role, next_password, id],
     )
-    .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Users update failed"))?;
+    .map_err(|e| map_db_write_error(e, "Users update failed"))?;
 
     if existing_role != "Клиент" && next_role == "Клиент" {
         conn.execute(
@@ -2027,7 +2425,7 @@ async fn bookings_create(
             body_string(&body, "status", "Подтверждено")
         ],
     )
-    .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Create failed"))?;
+    .map_err(|e| map_db_write_error(e, "Create failed"))?;
     let id = conn.last_insert_rowid();
 
     recalculate_class_enrollment(&conn).ok();
@@ -2078,7 +2476,7 @@ async fn bookings_update(
         "UPDATE bookings SET member = ?1, classId = ?2, className = ?3, date = ?4, time = ?5, status = ?6 WHERE id = ?7",
         params![member, class_id, class_name, date, time, status, id],
     )
-    .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Update failed"))?;
+    .map_err(|e| map_db_write_error(e, "Update failed"))?;
 
     recalculate_class_enrollment(&conn).ok();
     generate_notifications(&conn).ok();
@@ -2158,7 +2556,7 @@ async fn payments_create(
             body_opt_string(&body, "provider")
         ],
     )
-    .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Create failed"))?;
+    .map_err(|e| map_db_write_error(e, "Create failed"))?;
 
     let id = conn.last_insert_rowid();
     generate_notifications(&conn).ok();
@@ -2215,7 +2613,7 @@ async fn payments_update(
         "UPDATE payments SET member = ?1, amount = ?2, method = ?3, date = ?4, status = ?5, receiptId = ?6, provider = ?7 WHERE id = ?8",
         params![member, amount, method, date, status, receipt_id, provider, id],
     )
-    .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Update failed"))?;
+    .map_err(|e| map_db_write_error(e, "Update failed"))?;
 
     generate_notifications(&conn).ok();
 
@@ -2549,7 +2947,7 @@ async fn crm_notes_create(
         "INSERT INTO crm_notes (memberId,text,createdAt) VALUES (?1,?2,?3)",
         params![member_id, text, body_string(&body, "createdAt", &now_date())],
     )
-    .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Create failed"))?;
+    .map_err(|e| map_db_write_error(e, "Create failed"))?;
 
     let id = conn.last_insert_rowid();
     let created = query_one(&conn, "SELECT * FROM crm_notes WHERE id = ?1", &[&id])
@@ -2725,7 +3123,7 @@ async fn receipts_create(
             body_i64(&body, "paymentId", 0)
         ],
     )
-    .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "Create failed"))?;
+    .map_err(|e| map_db_write_error(e, "Create failed"))?;
 
     let id = conn.last_insert_rowid();
     let mut created = query_one(&conn, "SELECT * FROM receipts WHERE id = ?1", &[&id])
@@ -3246,6 +3644,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok()
         .and_then(|s| s.parse::<u16>().ok())
         .unwrap_or(4000);
+    let backup_dir = env::var("RUST_BACKUP_DIR").unwrap_or_else(|_| "backups".to_string());
+    let backup_keep = env::var("RUST_BACKUP_KEEP")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(14);
 
     let conn = Connection::open(db_path)?;
     init_db(&conn)?;
@@ -3254,6 +3657,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         db: Arc::new(Mutex::new(conn)),
     };
 
+    if let Ok(conn) = state.db.lock() {
+        match run_sqlite_backup(&conn, &backup_dir, backup_keep) {
+            Ok(path) => println!("Initial DB backup created at {}", path.to_string_lossy()),
+            Err(err) => eprintln!("Initial DB backup failed: {}", err),
+        }
+    }
+
     let scheduler_state = state.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(15 * 60));
@@ -3261,6 +3671,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             interval.tick().await;
             if let Ok(conn) = scheduler_state.db.lock() {
                 let _ = generate_notifications(&conn);
+            }
+        }
+    });
+
+    let backup_state = state.clone();
+    let backup_dir_for_task = backup_dir.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(24 * 60 * 60));
+        interval.tick().await;
+        loop {
+            interval.tick().await;
+            if let Ok(conn) = backup_state.db.lock() {
+                match run_sqlite_backup(&conn, &backup_dir_for_task, backup_keep) {
+                    Ok(path) => println!("Daily DB backup created at {}", path.to_string_lossy()),
+                    Err(err) => eprintln!("Daily DB backup failed: {}", err),
+                }
             }
         }
     });
