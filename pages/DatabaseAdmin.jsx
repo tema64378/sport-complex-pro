@@ -14,6 +14,7 @@ import {
   fetchCalendarSlots,
   fetchServices,
 } from '../api';
+import { downloadExcelWorkbook } from '../utils/excel';
 
 const DATASETS = [
   { id: 'members', label: 'Клиенты', fetcher: fetchMembers },
@@ -448,6 +449,23 @@ export default function DatabaseAdmin() {
     URL.revokeObjectURL(url);
   }
 
+  function exportExcel() {
+    if (!columns.length || !sortedRows.length) return;
+    const rowsData = sortedRows.map((row) => columns.map((column) => row?.[column] ?? ''));
+    const dateStamp = new Date().toISOString().slice(0, 10);
+
+    downloadExcelWorkbook(
+      [
+        {
+          name: activeConfig.label || activeDataset,
+          columns,
+          rows: rowsData,
+        },
+      ],
+      `${activeDataset}_${dateStamp}.xls`
+    );
+  }
+
   function exportPivotCsv() {
     if (!pivotResult || !pivotResult.rows.length) return;
     const firstColumn = `${pivotRowField} \\ ${pivotColField === 'none' ? 'Все' : pivotColField}`;
@@ -482,6 +500,41 @@ export default function DatabaseAdmin() {
     URL.revokeObjectURL(url);
   }
 
+  function exportPivotExcel() {
+    if (!pivotResult || !pivotResult.rows.length) return;
+
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    const firstColumn = `${pivotRowField} \\ ${pivotColField === 'none' ? 'Все' : pivotColField}`;
+    const columnsPivot = [
+      firstColumn,
+      ...pivotResult.colKeys.map((colKey) => (pivotColField === 'none' ? 'Все' : colKey)),
+      'Итого',
+    ];
+
+    const rowsPivot = pivotResult.rows.map((row) => ([
+      row.rowKey,
+      ...pivotResult.colKeys.map((colKey) => row.cells[colKey] ?? ''),
+      row.total ?? '',
+    ]));
+
+    rowsPivot.push([
+      'Итого',
+      ...pivotResult.colKeys.map((colKey) => pivotResult.columnTotals[colKey] ?? ''),
+      pivotResult.grandTotal ?? '',
+    ]);
+
+    downloadExcelWorkbook(
+      [
+        {
+          name: `Pivot_${activeDataset}`,
+          columns: columnsPivot,
+          rows: rowsPivot,
+        },
+      ],
+      `pivot_${activeDataset}_${dateStamp}.xls`
+    );
+  }
+
   const isNumericAggregation = pivotAggregation !== 'count';
 
   return (
@@ -500,6 +553,14 @@ export default function DatabaseAdmin() {
           >
             <i className="fas fa-rotate mr-2"></i>
             Обновить
+          </button>
+          <button
+            onClick={exportExcel}
+            disabled={!sortedRows.length}
+            className="px-4 py-2 rounded-lg bg-emerald-600 text-white font-medium disabled:opacity-40"
+          >
+            <i className="fas fa-file-excel mr-2"></i>
+            Excel
           </button>
           <button
             onClick={exportCsv}
@@ -645,6 +706,14 @@ export default function DatabaseAdmin() {
           >
             <i className="fas fa-download mr-2"></i>
             Экспорт pivot CSV
+          </button>
+          <button
+            onClick={exportPivotExcel}
+            disabled={!pivotResult || !pivotResult.rows.length}
+            className="px-4 py-2 rounded-lg bg-emerald-600 text-white font-medium disabled:opacity-40"
+          >
+            <i className="fas fa-file-excel mr-2"></i>
+            Экспорт pivot Excel
           </button>
         </div>
 
