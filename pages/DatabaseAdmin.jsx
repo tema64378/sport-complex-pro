@@ -32,6 +32,13 @@ const DATASETS = [
 ];
 
 const PAGE_SIZES = [10, 25, 50, 100];
+const PIVOT_AGGREGATIONS = [
+  { id: 'count', label: 'Количество' },
+  { id: 'sum', label: 'Сумма' },
+  { id: 'avg', label: 'Среднее' },
+  { id: 'min', label: 'Минимум' },
+  { id: 'max', label: 'Максимум' },
+];
 
 function toCellText(value) {
   if (value === null || value === undefined) return '';
@@ -109,6 +116,60 @@ function formatDateTime(value) {
   }
 }
 
+function parseNumericValue(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+
+  const text = toCellText(value).trim().replace(/\s/g, '');
+  if (!text) return null;
+  if (!/^-?\d+([.,]\d+)?$/.test(text)) return null;
+
+  const parsed = Number(text.replace(',', '.'));
+  if (!Number.isFinite(parsed)) return null;
+  return parsed;
+}
+
+function createAccumulator() {
+  return { count: 0, numericCount: 0, sum: 0, min: null, max: null };
+}
+
+function applyAccumulator(acc, rawValue, countOnly) {
+  acc.count += 1;
+  if (countOnly) return true;
+
+  const numeric = parseNumericValue(rawValue);
+  if (numeric === null) return false;
+
+  acc.numericCount += 1;
+  acc.sum += numeric;
+  if (acc.min === null || numeric < acc.min) acc.min = numeric;
+  if (acc.max === null || numeric > acc.max) acc.max = numeric;
+  return true;
+}
+
+function finalizeAccumulator(acc, aggregation) {
+  if (!acc) return null;
+  if (aggregation === 'count') return acc.count;
+  if (acc.numericCount === 0) return null;
+  if (aggregation === 'sum') return acc.sum;
+  if (aggregation === 'avg') return acc.sum / acc.numericCount;
+  if (aggregation === 'min') return acc.min;
+  if (aggregation === 'max') return acc.max;
+  return null;
+}
+
+function pivotKey(value) {
+  const text = toCellText(value).trim();
+  return text || '(пусто)';
+}
+
+function formatPivotValue(value, aggregation) {
+  if (value === null || value === undefined) return '—';
+  if (aggregation === 'count') return String(Math.round(Number(value) || 0));
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
+  return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(value);
+}
+
 export default function DatabaseAdmin() {
   const [activeDataset, setActiveDataset] = useState('members');
   const [rows, setRows] = useState([]);
@@ -123,6 +184,10 @@ export default function DatabaseAdmin() {
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [refreshSeconds, setRefreshSeconds] = useState(15);
   const [lastSync, setLastSync] = useState(null);
+  const [pivotRowField, setPivotRowField] = useState('');
+  const [pivotColField, setPivotColField] = useState('none');
+  const [pivotValueField, setPivotValueField] = useState('');
+  const [pivotAggregation, setPivotAggregation] = useState('count');
 
   const activeConfig = useMemo(
     () => DATASETS.find((set) => set.id === activeDataset) || DATASETS[0],
@@ -190,6 +255,32 @@ export default function DatabaseAdmin() {
     setFilterColumn((prev) => (prev === 'all' || columns.includes(prev) ? prev : 'all'));
   }, [columns]);
 
+  const numericColumns = useMemo(
+    () =>
+      columns.filter((column) =>
+        rows.some((row) => parseNumericValue(row?.[column]) !== null)
+      ),
+    [columns, rows]
+  );
+
+  useEffect(() => {
+    if (!columns.length) {
+      setPivotRowField('');
+      setPivotColField('none');
+      setPivotValueField('');
+      return;
+    }
+
+    setPivotRowField((prev) => (columns.includes(prev) ? prev : columns[0]));
+    setPivotColField((prev) =>
+      prev === 'none' || columns.includes(prev) ? prev : columns[1] || 'none'
+    );
+    setPivotValueField((prev) => {
+      if (numericColumns.includes(prev)) return prev;
+      return numericColumns[0] || '';
+    });
+  }, [columns, numericColumns]);
+
   const filterValues = useMemo(() => {
     if (filterColumn === 'all') return [];
     const values = Array.from(new Set(rows.map((row) => toCellText(row?.[filterColumn]))));
@@ -238,6 +329,101 @@ export default function DatabaseAdmin() {
     return sortedRows.slice(start, start + pageSize);
   }, [sortedRows, safePage, pageSize]);
 
+  const pivotResult = useMemo(() => {
+    if (!pivotRowField || !columns.length) return null;
+
+    const sourceRows = filteredRows;
+    const countOnly = pivotAggregation === 'count';
+    const hasColumnDimension = pivotColField !== 'none' && columns.includes(pivotColField);
+    const valueField = countOnly ? '' : pivotValueField;
+
+    if (!sourceRows.length) {
+      return {
+        rows: [],
+        rowKeys: [],
+        colKeys: [],
+        hasColumnDimension,
+        usedRows: 0,
+        nonNumericRows: 0,
+      };
+    }
+
+    if (!countOnly && !valueField) {
+      return {
+        error: 'Для этой агрегации выбери числовое поле.',
+        rows: [],
+        rowKeys: [],
+        colKeys: [],
+        hasColumnDimension,
+        usedRows: sourceRows.length,
+        nonNumericRows: sourceRows.length,
+      };
+    }
+
+    const matrix = new Map();
+    const rowTotals = new Map();
+    const colTotals = new Map();
+    const grandTotal = createAccumulator();
+    let nonNumericRows = 0;
+
+    sourceRows.forEach((row) => {
+      const rowKey = pivotKey(row?.[pivotRowField]);
+      const colKey = hasColumnDimension ? pivotKey(row?.[pivotColField]) : '(все)';
+      const rawValue = valueField ? row?.[valueField] : null;
+
+      if (!matrix.has(rowKey)) matrix.set(rowKey, new Map());
+      const rowMap = matrix.get(rowKey);
+      if (!rowMap.has(colKey)) rowMap.set(colKey, createAccumulator());
+      if (!rowTotals.has(rowKey)) rowTotals.set(rowKey, createAccumulator());
+      if (!colTotals.has(colKey)) colTotals.set(colKey, createAccumulator());
+
+      const usedForCell = applyAccumulator(rowMap.get(colKey), rawValue, countOnly);
+      applyAccumulator(rowTotals.get(rowKey), rawValue, countOnly);
+      applyAccumulator(colTotals.get(colKey), rawValue, countOnly);
+      applyAccumulator(grandTotal, rawValue, countOnly);
+      if (!countOnly && !usedForCell) nonNumericRows += 1;
+    });
+
+    const rowKeys = Array.from(matrix.keys()).sort((a, b) => compareValues(a, b));
+    const colKeys = Array.from(colTotals.keys()).sort((a, b) => compareValues(a, b));
+
+    const rowsData = rowKeys.map((rowKey) => {
+      const rowMap = matrix.get(rowKey);
+      const cells = {};
+      colKeys.forEach((colKey) => {
+        cells[colKey] = finalizeAccumulator(rowMap.get(colKey), pivotAggregation);
+      });
+      return {
+        rowKey,
+        cells,
+        total: finalizeAccumulator(rowTotals.get(rowKey), pivotAggregation),
+      };
+    });
+
+    const columnTotals = {};
+    colKeys.forEach((colKey) => {
+      columnTotals[colKey] = finalizeAccumulator(colTotals.get(colKey), pivotAggregation);
+    });
+
+    return {
+      rows: rowsData,
+      rowKeys,
+      colKeys,
+      columnTotals,
+      grandTotal: finalizeAccumulator(grandTotal, pivotAggregation),
+      hasColumnDimension,
+      usedRows: sourceRows.length,
+      nonNumericRows,
+    };
+  }, [
+    filteredRows,
+    columns,
+    pivotRowField,
+    pivotColField,
+    pivotValueField,
+    pivotAggregation,
+  ]);
+
   function changeSort(key) {
     setSortState((prev) => {
       if (prev.key !== key) return { key, direction: 'asc' };
@@ -261,6 +447,42 @@ export default function DatabaseAdmin() {
     link.remove();
     URL.revokeObjectURL(url);
   }
+
+  function exportPivotCsv() {
+    if (!pivotResult || !pivotResult.rows.length) return;
+    const firstColumn = `${pivotRowField} \\ ${pivotColField === 'none' ? 'Все' : pivotColField}`;
+    const headers = [firstColumn, ...pivotResult.colKeys, 'Итого'];
+    const lines = pivotResult.rows.map((row) => {
+      const values = pivotResult.colKeys.map((colKey) =>
+        formatPivotValue(row.cells[colKey], pivotAggregation)
+      );
+      return [row.rowKey, ...values, formatPivotValue(row.total, pivotAggregation)];
+    });
+
+    const footer = [
+      'Итого',
+      ...pivotResult.colKeys.map((colKey) =>
+        formatPivotValue(pivotResult.columnTotals[colKey], pivotAggregation)
+      ),
+      formatPivotValue(pivotResult.grandTotal, pivotAggregation),
+    ];
+
+    const csv = `\uFEFF${[headers, ...lines, footer]
+      .map((row) => row.map(escapeCsv).join(';'))
+      .join('\n')}`;
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `pivot_${activeDataset}_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  const isNumericAggregation = pivotAggregation !== 'count';
 
   return (
     <div className="space-y-6">
@@ -406,6 +628,158 @@ export default function DatabaseAdmin() {
             </select>
           </div>
         </div>
+      </div>
+
+      <div className="glass-card p-4 space-y-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">Сводная таблица</h2>
+            <p className="text-sm text-slate-600 mt-1">
+              Быстрый pivot по текущим отфильтрованным данным.
+            </p>
+          </div>
+          <button
+            onClick={exportPivotCsv}
+            disabled={!pivotResult || !pivotResult.rows.length}
+            className="px-4 py-2 rounded-lg bg-slate-700 text-white font-medium disabled:opacity-40"
+          >
+            <i className="fas fa-download mr-2"></i>
+            Экспорт pivot CSV
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div>
+            <label className="text-xs text-slate-500">Строки</label>
+            <select
+              value={pivotRowField}
+              onChange={(e) => setPivotRowField(e.target.value)}
+              className="w-full mt-1 px-3 py-2 rounded-lg border bg-white/5 text-slate-900"
+            >
+              {columns.map((column) => (
+                <option key={column} value={column}>
+                  {column}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs text-slate-500">Колонки</label>
+            <select
+              value={pivotColField}
+              onChange={(e) => setPivotColField(e.target.value)}
+              className="w-full mt-1 px-3 py-2 rounded-lg border bg-white/5 text-slate-900"
+            >
+              <option value="none">Без колонок</option>
+              {columns.map((column) => (
+                <option key={column} value={column}>
+                  {column}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs text-slate-500">Агрегация</label>
+            <select
+              value={pivotAggregation}
+              onChange={(e) => setPivotAggregation(e.target.value)}
+              className="w-full mt-1 px-3 py-2 rounded-lg border bg-white/5 text-slate-900"
+            >
+              {PIVOT_AGGREGATIONS.map((aggregation) => (
+                <option key={aggregation.id} value={aggregation.id}>
+                  {aggregation.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs text-slate-500">Поле значений</label>
+            <select
+              value={pivotValueField}
+              onChange={(e) => setPivotValueField(e.target.value)}
+              className="w-full mt-1 px-3 py-2 rounded-lg border bg-white/5 text-slate-900"
+              disabled={!isNumericAggregation}
+            >
+              {isNumericAggregation ? (
+                numericColumns.length ? (
+                  numericColumns.map((column) => (
+                    <option key={column} value={column}>
+                      {column}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">Нет числовых полей</option>
+                )
+              ) : (
+                <option value="">Не требуется</option>
+              )}
+            </select>
+          </div>
+        </div>
+
+        <div className="text-xs text-slate-500">
+          Источник: {pivotResult?.usedRows ?? 0} строк после фильтров.
+          {pivotResult?.nonNumericRows > 0 && (
+            <span className="ml-2 text-amber-700">
+              Пропущено нечисловых значений: {pivotResult.nonNumericRows}.
+            </span>
+          )}
+        </div>
+
+        {pivotResult?.error ? (
+          <div className="text-sm text-red-600">{pivotResult.error}</div>
+        ) : !pivotResult || !pivotResult.rows.length ? (
+          <div className="text-sm text-slate-600">Недостаточно данных для сводной таблицы.</div>
+        ) : (
+          <div className="overflow-auto border rounded-lg border-white/10">
+            <table className="w-full min-w-[720px]">
+              <thead className="bg-white/5 border-b border-white/10">
+                <tr>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">
+                    {pivotRowField || 'Строки'}
+                  </th>
+                  {pivotResult.colKeys.map((colKey) => (
+                    <th key={colKey} className="px-4 py-3 text-right text-sm font-semibold text-gray-700">
+                      {pivotColField === 'none' ? 'Все' : colKey}
+                    </th>
+                  ))}
+                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Итого</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/10">
+                {pivotResult.rows.map((row) => (
+                  <tr key={row.rowKey} className="hover:bg-white/5">
+                    <td className="px-4 py-3 text-sm text-slate-800">{row.rowKey}</td>
+                    {pivotResult.colKeys.map((colKey) => (
+                      <td key={`${row.rowKey}-${colKey}`} className="px-4 py-3 text-sm text-right text-slate-800">
+                        {formatPivotValue(row.cells[colKey], pivotAggregation)}
+                      </td>
+                    ))}
+                    <td className="px-4 py-3 text-sm text-right font-semibold text-slate-900">
+                      {formatPivotValue(row.total, pivotAggregation)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="bg-white/5 border-t border-white/10">
+                <tr>
+                  <td className="px-4 py-3 text-sm font-semibold text-slate-900">Итого</td>
+                  {pivotResult.colKeys.map((colKey) => (
+                    <td key={`total-${colKey}`} className="px-4 py-3 text-sm text-right font-semibold text-slate-900">
+                      {formatPivotValue(pivotResult.columnTotals[colKey], pivotAggregation)}
+                    </td>
+                  ))}
+                  <td className="px-4 py-3 text-sm text-right font-semibold text-slate-900">
+                    {formatPivotValue(pivotResult.grandTotal, pivotAggregation)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="glass-card overflow-hidden">
