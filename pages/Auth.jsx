@@ -43,6 +43,11 @@ function isValidEmail(value) {
   return parts[1].includes('.');
 }
 
+function isTemporaryVkEmail(value) {
+  const email = String(value || '').trim().toLowerCase();
+  return !email || email.endsWith('@vk.local') || email === 'vk_demo@vk.com';
+}
+
 export default function Auth({ session, setSession }) {
   const [activeTab, setActiveTab] = useState('login');
   const [users, setUsers] = useState([]);
@@ -71,6 +76,18 @@ export default function Auth({ session, setSession }) {
   }, []);
 
   useEffect(() => { saveUsers(users); }, [users]);
+
+  useEffect(() => {
+    if (!session?.needsEmail) {
+      setEmailPromptOpen(false);
+      return;
+    }
+    setEmailPromptOpen(true);
+    setEmailPromptError('');
+    if (!emailPromptValue && session?.email && !isTemporaryVkEmail(session.email)) {
+      setEmailPromptValue(session.email);
+    }
+  }, [session, emailPromptValue]);
 
   const existingEmails = useMemo(() => new Set(users.map(u => u.email.toLowerCase())), [users]);
 
@@ -324,6 +341,8 @@ export default function Auth({ session, setSession }) {
               <button
                 onClick={() => {
                   try { localStorage.removeItem('auth_token'); } catch (e) {}
+                  clearSession();
+                  setSession(null);
                   setEmailPromptOpen(false);
                   setEmailPromptValue('');
                   setEmailPromptError('');
