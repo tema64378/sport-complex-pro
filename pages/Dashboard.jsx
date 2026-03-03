@@ -1,7 +1,24 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import StatCard from '../components/StatCard';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { fetchAnalytics, fetchClasses } from '../api';
+import {
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
+import {
+  fetchAnalytics,
+  fetchClasses,
+  fetchNotifications,
+  fetchPayments,
+  fetchMembers,
+} from '../api';
 
 const fallback = {
   metrics: {
@@ -9,6 +26,7 @@ const fallback = {
     totalTrainers: 0,
     totalClasses: 0,
     monthRevenue: 0,
+    activeMembers: 0,
   },
   monthlyMembers: [
     { month: 'Янв', new: 0, churn: 0, total: 0 },
@@ -19,190 +37,310 @@ const fallback = {
     { month: 'Июн', new: 0, churn: 0, total: 0 },
   ],
   revenueByMonth: [],
-  classAttendance: [],
 };
 
-export default function Dashboard() {
+function shortDate(value) {
+  if (!value) return '—';
+  try {
+    return new Date(value).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' });
+  } catch (e) {
+    return String(value);
+  }
+}
+
+function safeAmount(value) {
+  const parsed = Number(value || 0);
+  if (!Number.isFinite(parsed)) return 0;
+  return parsed;
+}
+
+export default function Dashboard({ onNavigate }) {
   const [data, setData] = useState(fallback);
   const [classes, setClasses] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [payments, setPayments] = useState([]);
+  const [members, setMembers] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let mounted = true;
+
     (async () => {
-      try {
-        const res = await fetchAnalytics();
-        if (!mounted) return;
+      setLoading(true);
+
+      const [analyticsRes, classesRes, notificationsRes, paymentsRes, membersRes] = await Promise.allSettled([
+        fetchAnalytics(),
+        fetchClasses(),
+        fetchNotifications(),
+        fetchPayments(),
+        fetchMembers(),
+      ]);
+
+      if (!mounted) return;
+
+      if (analyticsRes.status === 'fulfilled') {
+        const res = analyticsRes.value;
         setData({
-          metrics: res.metrics || fallback.metrics,
+          metrics: { ...fallback.metrics, ...(res.metrics || {}) },
           monthlyMembers: res.monthlyMembers?.length ? res.monthlyMembers : fallback.monthlyMembers,
-          revenueByMonth: res.revenueByMonth || [],
-          classAttendance: res.classAttendance || [],
+          revenueByMonth: Array.isArray(res.revenueByMonth) ? res.revenueByMonth : [],
         });
-      } catch (e) {}
-    })();
-    (async () => {
-      try {
-        const list = await fetchClasses();
-        if (!mounted) return;
-        setClasses(list.slice(0, 4));
-      } catch (e) {}
-    })();
-    try {
-      const raw = localStorage.getItem('notifications');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (!mounted) return;
-        setNotifications(parsed.slice(0, 3));
+      } else {
+        setData(fallback);
       }
-    } catch (e) {}
-    return () => { mounted = false; };
+
+      if (classesRes.status === 'fulfilled') setClasses(classesRes.value || []);
+      if (notificationsRes.status === 'fulfilled') setNotifications(notificationsRes.value || []);
+      if (paymentsRes.status === 'fulfilled') setPayments(paymentsRes.value || []);
+      if (membersRes.status === 'fulfilled') setMembers(membersRes.value || []);
+
+      setLoading(false);
+    })();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  const classDistribution = data.classAttendance.length
-    ? data.classAttendance.map((c, idx) => ({
-        name: c.name,
-        value: c.attendance || 0,
-        color: ['#16a34a', '#059669', '#22c55e', '#4ade80', '#15803d'][idx % 5],
-      }))
-    : [];
+  const kpis = useMemo(() => {
+    const paidCount = payments.filter((payment) => payment.status === 'Оплачен').length;
+    const pendingCount = payments.filter((payment) => payment.status !== 'Оплачен').length;
+
+    return [
+      {
+        title: 'Всего клиентов',
+        value: data.metrics.totalMembers.toLocaleString('ru-RU'),
+        change: `Активных: ${data.metrics.activeMembers || 0}`,
+        icon: 'fas fa-users',
+      },
+      {
+        title: 'Тренировки в системе',
+        value: data.metrics.totalClasses.toLocaleString('ru-RU'),
+        change: `Ближайших: ${classes.slice(0, 6).length}`,
+        icon: 'fas fa-dumbbell',
+      },
+      {
+        title: 'Доход за месяц',
+        value: `${safeAmount(data.metrics.monthRevenue).toLocaleString('ru-RU')} ₽`,
+        change: `Оплачено: ${paidCount}, ожидание: ${pendingCount}`,
+        icon: 'fas fa-ruble-sign',
+      },
+      {
+        title: 'Непрочитанные события',
+        value: notifications.filter((item) => !item.read).length,
+        change: `Всего в ленте: ${notifications.length}`,
+        icon: 'fas fa-inbox',
+      },
+    ];
+  }, [classes, data.metrics, notifications, payments]);
+
+  const attentionItems = useMemo(() => {
+    const pendingPayments = payments.filter((item) => item.status !== 'Оплачен').length;
+    const lowLoadedClasses = classes.filter((item) => Number(item.enrolled || 0) < 4).length;
+    const inactiveMembers = members.filter((item) => item.status && item.status !== 'Активный').length;
+    const unreadNotifications = notifications.filter((item) => !item.read).length;
+
+    return [
+      {
+        id: 'payments',
+        label: 'Ожидают оплаты',
+        value: pendingPayments,
+        hint: 'Проверьте счета и напомните клиентам о платеже.',
+        tone: pendingPayments > 0 ? 'warning' : 'ok',
+      },
+      {
+        id: 'bookings',
+        label: 'Мало записей на тренировки',
+        value: lowLoadedClasses,
+        hint: 'Есть группы с низкой загрузкой, можно усилить продвижение.',
+        tone: lowLoadedClasses > 0 ? 'warning' : 'ok',
+      },
+      {
+        id: 'members',
+        label: 'Неактивные клиенты',
+        value: inactiveMembers,
+        hint: 'Сегмент для реактивации через CRM-кампанию.',
+        tone: inactiveMembers > 0 ? 'warning' : 'ok',
+      },
+      {
+        id: 'notifications',
+        label: 'Непрочитанные уведомления',
+        value: unreadNotifications,
+        hint: 'Проверьте входящие и закройте критичные задачи.',
+        tone: unreadNotifications > 0 ? 'warning' : 'ok',
+      },
+    ];
+  }, [classes, members, notifications, payments]);
+
+  const quickActions = [
+    { id: 'members', label: 'Новый клиент', icon: 'fas fa-user-plus' },
+    { id: 'bookings', label: 'Создать запись', icon: 'fas fa-calendar-plus' },
+    { id: 'payments', label: 'Принять оплату', icon: 'fas fa-credit-card' },
+    { id: 'notifications', label: 'Открыть inbox', icon: 'fas fa-inbox' },
+  ];
+
+  const upcomingClasses = classes.slice(0, 6);
+  const recentNotifications = notifications.slice(0, 5);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Главная</h1>
-          <p className="text-gray-600 text-sm mt-2">Добро пожаловать в интерфейс управления</p>
+      <section className="glass-card p-6 reveal-up">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">Операционный центр</h2>
+            <p className="text-sm text-gray-600 mt-2">
+              Быстрый срез по выручке, посещаемости и задачам, которые требуют внимания сегодня.
+            </p>
+          </div>
+          <div className="quick-action-row">
+            {quickActions.map((action) => (
+              <button
+                key={action.id}
+                type="button"
+                className="quick-action-btn"
+                onClick={() => onNavigate && onNavigate(action.id)}
+              >
+                <i className={action.icon} />
+                <span>{action.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title="Всего клиентов" value={data.metrics.totalMembers.toLocaleString('ru-RU')} change="" icon="fas fa-users" color="green" />
-        <StatCard title="Активные тренировки" value={data.metrics.totalClasses.toLocaleString('ru-RU')} change="" icon="fas fa-dumbbell" color="green" />
-        <StatCard title="Тренеры" value={data.metrics.totalTrainers.toLocaleString('ru-RU')} change="" icon="fas fa-person" color="green" />
-        <StatCard title="Доход за месяц" value={`${data.metrics.monthRevenue.toLocaleString('ru-RU')} ₽`} change="" icon="fas fa-dollar-sign" color="green" />
-      </div>
+      {loading ? (
+        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className="glass-card p-6 skeleton-card" />
+          ))}
+        </section>
+      ) : (
+        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 stagger-list">
+          {kpis.map((item) => (
+            <StatCard
+              key={item.title}
+              title={item.title}
+              value={item.value}
+              change={item.change}
+              icon={item.icon}
+              color="green"
+            />
+          ))}
+        </section>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 glass-card p-6">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">Рост членства</h2>
-          <ResponsiveContainer width="100%" height={300}>
+      <section className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="xl:col-span-2 glass-card p-5 reveal-up">
+          <h3 className="text-lg font-bold text-gray-900 mb-4">Динамика клиентской базы</h3>
+          <ResponsiveContainer width="100%" height={280}>
             <LineChart data={data.monthlyMembers}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="month" stroke="#6b7280" />
-              <YAxis stroke="#6b7280" />
-              <Tooltip contentStyle={{ backgroundColor: '#111827', border: 'none', borderRadius: '8px', color: '#fff' }} />
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.24)" />
+              <XAxis dataKey="month" stroke="currentColor" />
+              <YAxis stroke="currentColor" />
+              <Tooltip contentStyle={{ border: 'none', borderRadius: 10 }} />
               <Legend />
-              <Line type="monotone" dataKey="new" name="Новые" stroke="#16a34a" strokeWidth={2} />
-              <Line type="monotone" dataKey="churn" name="Отток" stroke="#ef4444" strokeWidth={2} />
+              <Line type="monotone" dataKey="new" name="Новые" stroke="#16a34a" strokeWidth={2.6} />
+              <Line type="monotone" dataKey="churn" name="Отток" stroke="#ef4444" strokeWidth={2.6} />
             </LineChart>
           </ResponsiveContainer>
         </div>
 
-        <div className="glass-card p-6">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">Распределение тренировок</h2>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie data={classDistribution} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={2} dataKey="value">
-                {classDistribution.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip contentStyle={{ backgroundColor: '#111827', border: 'none', borderRadius: '8px', color: '#fff' }} />
-            </PieChart>
+        <div className="glass-card p-5 reveal-up">
+          <h3 className="text-lg font-bold text-gray-900 mb-4">Выручка по месяцам</h3>
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={data.revenueByMonth}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.24)" />
+              <XAxis dataKey="month" stroke="currentColor" />
+              <YAxis stroke="currentColor" />
+              <Tooltip contentStyle={{ border: 'none', borderRadius: 10 }} />
+              <Bar dataKey="revenue" fill="var(--accent)" radius={[10, 10, 0, 0]} />
+            </BarChart>
           </ResponsiveContainer>
-          <div className="mt-4 space-y-2">
-            {classDistribution.map((item, index) => (
-              <div key={index} className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }}></div>
-                  <span className="text-gray-600">{item.name}</span>
+        </div>
+      </section>
+
+      <section className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <div className="glass-card p-5 reveal-up">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-bold text-gray-900">Требует внимания</h3>
+            <button className="action-link-btn" onClick={() => onNavigate && onNavigate('notifications')}>
+              Открыть inbox
+            </button>
+          </div>
+          <div className="space-y-3">
+            {attentionItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`attention-row ${item.tone}`}
+                onClick={() => onNavigate && onNavigate(item.id)}
+              >
+                <div>
+                  <p className="attention-label">{item.label}</p>
+                  <p className="attention-hint">{item.hint}</p>
                 </div>
-                <span className="font-medium text-gray-900">{item.value}</span>
-              </div>
+                <span className="attention-value">{item.value}</span>
+              </button>
             ))}
-            {classDistribution.length === 0 && <p className="text-sm text-slate-400">Нет данных по тренировкам.</p>}
           </div>
         </div>
-      </div>
 
-      <div className="glass-card p-6">
-        <h2 className="text-lg font-bold text-slate-900 mb-4">Тренд доходов</h2>
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={data.revenueByMonth}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-            <XAxis dataKey="month" stroke="#6b7280" />
-            <YAxis stroke="#6b7280" />
-            <Tooltip contentStyle={{ backgroundColor: '#111827', border: 'none', borderRadius: '8px', color: '#fff' }} />
-            <Bar dataKey="revenue" fill="#16a34a" radius={[8, 8, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="glass-card p-6">
-          <h2 className="text-lg font-bold text-slate-900 mb-4">Ближайшие тренировки</h2>
+        <div className="glass-card p-5 reveal-up">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-bold text-gray-900">Ближайшие тренировки</h3>
+            <button className="action-link-btn" onClick={() => onNavigate && onNavigate('classes')}>
+              Все тренировки
+            </button>
+          </div>
           <div className="space-y-3">
-            {classes.map((cls) => (
-              <div key={cls.id} className="flex items-center justify-between p-4 bg-white/5 rounded-lg hover:bg-white/10 transition-colors">
-                <div className="flex-1">
-                  <p className="font-medium text-gray-900">{cls.name}</p>
-                  <div className="flex items-center gap-4 text-sm text-gray-600 mt-1">
-                    <span><i className="fas fa-person mr-1"></i>{cls.trainerName || 'Без тренера'}</span>
-                    <span><i className="fas fa-clock mr-1"></i>{cls.schedule || '-'}</span>
+            {upcomingClasses.length ? (
+              upcomingClasses.map((item) => (
+                <div key={item.id} className="schedule-row">
+                  <div>
+                    <div className="font-semibold text-slate-900">{item.name}</div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      {item.trainerName || 'Без тренера'} • {item.schedule || 'Расписание не указано'}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-slate-500">Записаны</div>
+                    <div className="font-semibold text-slate-900">{item.enrolled || 0}</div>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-medium text-gray-600">{cls.enrolled || 0} участников</p>
-                </div>
-              </div>
-            ))}
-            {classes.length === 0 && <p className="text-sm text-slate-400">Тренировок пока нет.</p>}
+              ))
+            ) : (
+              <p className="text-sm text-slate-500">Тренировки еще не созданы.</p>
+            )}
           </div>
         </div>
+      </section>
 
-        <div className="glass-card p-6">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">Сводка за месяц</h2>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between p-4 bg-white/5 rounded-lg">
-              <div>
-                <p className="text-sm text-gray-600">Доход</p>
-                <p className="text-2xl font-bold text-gray-900">{data.metrics.monthRevenue.toLocaleString('ru-RU')} ₽</p>
-              </div>
-            </div>
-            <div className="flex items-center justify-between p-4 bg-white/5 rounded-lg">
-              <div>
-                <p className="text-sm text-gray-600">Новых клиентов</p>
-                <p className="text-2xl font-bold text-gray-900">{data.metrics.newMembersMonth || 0}</p>
-              </div>
-            </div>
-            <div className="flex items-center justify-between p-4 bg-white/5 rounded-lg">
-              <div>
-                <p className="text-sm text-gray-600">Активных абонементов</p>
-                <p className="text-2xl font-bold text-gray-900">{data.metrics.activeMembers || 0}</p>
-              </div>
-            </div>
-          </div>
+      <section className="glass-card p-5 reveal-up">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-bold text-gray-900">Лента событий</h3>
+          <button className="action-link-btn" onClick={() => onNavigate && onNavigate('notifications')}>
+            Перейти к уведомлениям
+          </button>
         </div>
-      </div>
-
-      <div className="glass-card p-6">
-        <h2 className="text-lg font-bold text-slate-900 mb-4">Последние уведомления</h2>
         <div className="space-y-3">
-          {notifications.map((n) => (
-            <div key={n.id} className="flex items-center justify-between p-3 rounded bg-white/5">
-              <div>
-                <div className="text-xs text-slate-400">{n.type} • {n.createdAt}</div>
-                <div className="text-slate-900 font-medium">{n.title}</div>
+          {recentNotifications.length ? (
+            recentNotifications.map((item) => (
+              <div key={item.id} className={`notification-row ${item.read ? 'read' : 'unread'}`}>
+                <div>
+                  <div className="text-xs text-slate-500">{item.type} • {item.createdAt}</div>
+                  <div className="font-medium text-slate-900 mt-1">{item.title}</div>
+                  <p className="text-sm text-slate-600 mt-1">{item.message}</p>
+                </div>
+                <span className={`state-pill ${item.read ? 'read' : 'unread'}`}>
+                  {item.read ? 'Прочитано' : 'Новое'}
+                </span>
               </div>
-              <span className={`text-xs px-2 py-1 rounded ${n.read ? 'bg-white/10 text-slate-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
-                {n.read ? 'Прочитано' : 'Новое'}
-              </span>
-            </div>
-          ))}
-          {notifications.length === 0 && <p className="text-sm text-slate-400">Уведомлений пока нет.</p>}
+            ))
+          ) : (
+            <p className="text-sm text-slate-500">Событий пока нет.</p>
+          )}
         </div>
-      </div>
+      </section>
     </div>
   );
 }

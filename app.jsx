@@ -24,6 +24,13 @@ import Crm from './pages/Crm';
 import DatabaseAdmin from './pages/DatabaseAdmin';
 import News from './pages/News';
 
+const THEME_OPTIONS = [
+  { id: 'light', label: 'Светлая' },
+  { id: 'dark', label: 'Темная' },
+  { id: 'ocean', label: 'Ocean' },
+  { id: 'sunset', label: 'Sunset' },
+];
+
 const MENU_ITEMS = [
   { id: 'dashboard', label: 'Главная', icon: 'fas fa-chart-line' },
   { id: 'news', label: 'Новости', icon: 'fas fa-newspaper' },
@@ -191,7 +198,7 @@ function App() {
     }
     switch (currentPage) {
       case 'dashboard':
-        return session?.role === 'Клиент' ? <Client /> : <Dashboard />;
+        return session?.role === 'Клиент' ? <Client onNavigate={setCurrentPage} /> : <Dashboard onNavigate={setCurrentPage} />;
       case 'news':
         return <News />;
       case 'members':
@@ -233,7 +240,7 @@ function App() {
       case 'search':
         return <Search />;
       case 'client':
-        return <Client />;
+        return <Client onNavigate={setCurrentPage} />;
       default:
         return <Dashboard />;
     }
@@ -262,7 +269,8 @@ function App() {
         session={session}
         onLogout={handleLogout}
         theme={theme}
-        onThemeToggle={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+        themeOptions={THEME_OPTIONS}
+        onThemeChange={setTheme}
         mustCompleteEmail={mustCompleteEmail}
       />
       <div className="site-content">

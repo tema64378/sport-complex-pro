@@ -7,14 +7,20 @@ export default function TopNav({
   session,
   onLogout,
   theme,
-  onThemeToggle,
+  onThemeChange,
+  themeOptions,
   mustCompleteEmail,
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [themeOpen, setThemeOpen] = useState(false);
 
   useEffect(() => {
     setMobileOpen(false);
+    setThemeOpen(false);
   }, [currentPage]);
+
+  const activeTheme = (themeOptions || []).find((item) => item.id === theme);
+  const themeLabel = activeTheme ? activeTheme.label : 'Тема';
 
   return (
     <header className="top-header">
@@ -38,18 +44,40 @@ export default function TopNav({
         </div>
 
         <div className="top-actions">
-          <button
-            type="button"
-            className={`theme-switch ${theme === 'dark' ? 'is-dark' : ''}`}
-            onClick={onThemeToggle}
-            aria-label="Переключить тему"
-          >
-            <span className="theme-switch-track">
-              <i className="fas fa-sun theme-icon theme-icon--sun" />
-              <i className="fas fa-moon theme-icon theme-icon--moon" />
-            </span>
-            <span className="theme-switch-thumb" />
-          </button>
+          <div className="theme-box">
+            <button
+              type="button"
+              className={`theme-switch ${theme === 'dark' ? 'is-dark' : ''}`}
+              onClick={() => setThemeOpen((prev) => !prev)}
+              aria-label="Выбрать тему"
+            >
+              <span className="theme-switch-track">
+                <i className="fas fa-sun theme-icon theme-icon--sun" />
+                <i className="fas fa-moon theme-icon theme-icon--moon" />
+              </span>
+              <span className="theme-switch-thumb" />
+            </button>
+            {themeOpen && (
+              <div className="theme-popover">
+                <p className="theme-title">Темы</p>
+                {(themeOptions || []).map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`theme-pop-item ${item.id === theme ? 'active' : ''}`}
+                    onClick={() => {
+                      onThemeChange(item.id);
+                      setThemeOpen(false);
+                    }}
+                  >
+                    <span>{item.label}</span>
+                    {item.id === theme && <i className="fas fa-check" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <span className="theme-label-chip">{themeLabel}</span>
 
           {session ? (
             <>
@@ -62,9 +90,9 @@ export default function TopNav({
                   <span className="profile-role">{session.role}</span>
                 </div>
               </div>
-              <button type="button" className="action-btn danger" onClick={onLogout}>
-                <i className="fas fa-right-from-bracket" />
-                Выйти
+            <button type="button" className="action-btn danger" onClick={onLogout}>
+              <i className="fas fa-right-from-bracket" />
+              Выйти
               </button>
             </>
           ) : (

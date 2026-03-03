@@ -1,9 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { fetchPayments, createPayment, updatePayment, deletePayment, isApiAvailable, fetchPaymentProviders, createMockPaymentLink, createYooKassaPayment, createTinkoffInit, createTinkoffSbpQr, createTinkoffSberpayQr } from '../api';
 
 export default function Payments() {
   const [payments, setPayments] = useState([]);
   const [filterStatus, setFilterStatus] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [density, setDensity] = useState(() => {
+    try {
+      return localStorage.getItem('payments_density_v2') || 'comfortable';
+    } catch (e) {
+      return 'comfortable';
+    }
+  });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ member: '', amount: '', date: '', status: 'Оплачен', method: '', provider: '' });
@@ -57,14 +65,26 @@ export default function Payments() {
   }, []);
 
   useEffect(() => { if (!useApi) localStorage.setItem('payments', JSON.stringify(payments)); }, [payments, useApi]);
+  useEffect(() => {
+    try {
+      localStorage.setItem('payments_density_v2', density);
+    } catch (e) {}
+  }, [density]);
 
-  const statusColors = { 'Оплачен': 'bg-green-100 text-green-800', 'Не оплачен': 'bg-yellow-100 text-yellow-800', 'Ошибка': 'bg-red-100 text-red-800' };
+  const statusColors = { 'Оплачен': 'status-badge status-ok', 'Не оплачен': 'status-badge status-warning', 'Ошибка': 'status-badge status-danger' };
 
   const totalRevenueNumber = payments.filter(p => p.status === 'Оплачен').reduce((sum, p) => sum + Number(p.amount || 0), 0);
   const formatCurrency = (value) => new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB' }).format(value);
   const totalRevenue = formatCurrency(totalRevenueNumber);
 
-  const filteredPayments = payments.filter(payment => filterStatus === 'all' || payment.status === filterStatus);
+  const filteredPayments = useMemo(() => {
+    const q = searchTerm.toLowerCase().trim();
+    return payments.filter((payment) => {
+      const byStatus = filterStatus === 'all' || payment.status === filterStatus;
+      const bySearch = !q || String(payment.member || '').toLowerCase().includes(q) || String(payment.method || '').toLowerCase().includes(q);
+      return byStatus && bySearch;
+    });
+  }, [payments, filterStatus, searchTerm]);
 
   function openAdd() { setEditing(null); setForm({ member: '', amount: '', date: new Date().toISOString().slice(0,10), status: 'Оплачен', method: '', provider: '' }); setIsModalOpen(true); }
   function openEdit(p) { setEditing(p.id); setForm({ member: p.member, amount: p.amount, date: p.date, status: p.status, method: p.method, provider: p.provider || '' }); setIsModalOpen(true); }
@@ -255,57 +275,68 @@ export default function Payments() {
       </div>
 
       {/* Filter */}
-      <div className="flex gap-4">
-        {['all', 'Оплачен', 'Не оплачен', 'Ошибка'].map((status) => (
-          <button
-            key={status}
-            onClick={() => setFilterStatus(status)}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              filterStatus === status
-                ? 'bg-blue-600 text-white'
-                : 'bg-white/5 border text-slate-200'
-            }`}
-          >
-            {status === 'all' ? 'Все' : status}
-          </button>
-        ))}
+      <div className="glass-card p-4 space-y-3">
+        <label className="news-search">
+          <i className="fas fa-search"></i>
+          <input
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Поиск по клиенту или методу оплаты"
+          />
+        </label>
+        <div className="flex gap-2 flex-wrap items-center">
+          {['all', 'Оплачен', 'Не оплачен', 'Ошибка'].map((status) => (
+            <button
+              key={status}
+              onClick={() => setFilterStatus(status)}
+              className={`chip ${filterStatus === status ? 'active' : ''}`}
+            >
+              {status === 'all' ? 'Все' : status}
+            </button>
+          ))}
+          <span className="text-sm text-slate-600 ml-2">Плотность:</span>
+          <button className={`chip ${density === 'comfortable' ? 'active' : ''}`} onClick={() => setDensity('comfortable')}>Комфорт</button>
+          <button className={`chip ${density === 'compact' ? 'active' : ''}`} onClick={() => setDensity('compact')}>Компактно</button>
+        </div>
       </div>
 
       {/* Table */}
-      <div className="glass-card overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-white/5 border-b border-white/10">
+      <div className="glass-card overflow-hidden table-shell">
+        {filteredPayments.length ? (
+        <div className="overflow-auto">
+        <table className={`w-full ${density === 'compact' ? 'table-compact' : 'table-comfortable'}`}>
+          <thead>
             <tr>
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Клиент</th>
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Сумма</th>
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Метод оплаты</th>
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Дата</th>
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Статус</th>
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Чек</th>
-              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Провайдер</th>
-              <th className="px-6 py-4 text-right text-sm font-semibold text-gray-700">Действия</th>
+              <th>Клиент</th>
+              <th>Сумма</th>
+              <th>Метод оплаты</th>
+              <th>Дата</th>
+              <th>Статус</th>
+              <th>Чек</th>
+              <th>Провайдер</th>
+              <th className="text-right">Действия</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-white/6">
+          <tbody>
             {filteredPayments.map((payment) => (
-              <tr key={payment.id} className="hover:bg-white/5 transition-colors">
-                <td className="px-6 py-4 font-medium text-slate-900">{payment.member}</td>
-                <td className="px-6 py-4 font-semibold text-slate-900">{formatCurrency(payment.amount)}</td>
-                <td className="px-6 py-4 text-slate-400">{payment.method}</td>
-                <td className="px-6 py-4 text-slate-400">{payment.date}</td>
-                <td className="px-6 py-4">
-                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColors[payment.status]}`}>
+              <tr key={payment.id}>
+                <td className="font-medium">{payment.member}</td>
+                <td className="font-semibold">{formatCurrency(payment.amount)}</td>
+                <td>{payment.method}</td>
+                <td>{payment.date}</td>
+                <td>
+                  <span className={statusColors[payment.status] || 'status-badge'}>
                     {payment.status}
                   </span>
                 </td>
-                <td className="px-6 py-4 text-slate-400">{payment.receiptId ? `#${payment.receiptId}` : '-'}</td>
-                <td className="px-6 py-4 text-slate-400">{payment.provider || '-'}</td>
-                <td className="px-6 py-4 text-right">
+                <td>{payment.receiptId ? `#${payment.receiptId}` : '-'}</td>
+                <td>{payment.provider || '-'}</td>
+                <td className="text-right">
                   <div className="flex justify-end gap-2">
-                    <button onClick={() => openEdit(payment)} className="p-2 bg-white/5 text-blue-400 rounded-lg transition-colors">
-                      <i className="fas fa-eye"></i>
+                    <button onClick={() => openEdit(payment)} className="icon-btn transition-colors">
+                      <i className="fas fa-pen"></i>
                     </button>
-                    <button onClick={() => remove(payment.id)} className="p-2 bg-white/5 text-red-400 rounded-lg transition-colors">
+                    <button onClick={() => remove(payment.id)} className="icon-btn transition-colors">
                       <i className="fas fa-trash"></i>
                     </button>
                   </div>
@@ -314,6 +345,10 @@ export default function Payments() {
             ))}
           </tbody>
         </table>
+        </div>
+        ) : (
+          <div className="p-8 text-center text-slate-500">Платежи не найдены по выбранным фильтрам.</div>
+        )}
       </div>
 
       {isModalOpen && (
