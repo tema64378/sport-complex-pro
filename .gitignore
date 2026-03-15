@@ -1,11 +1,24 @@
-node_modules/
-dist/
+# General
+.DS_Store
+*.log
 .env
 .env.local
 .env.*.local
-*.log
-.DS_Store
-server/database.db
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Backend (Rust)
+backend/target/
+backend/data.db-shm
+backend/data.db-wal
+backend/backups/
+backend/logs/
+
+# Legacy paths
+node_modules/
+dist/
 rust-server/target/
-rust-server/data.db
 rust-server/backups/
+rust-server/data.db

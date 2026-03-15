@@ -1,12 +1,12 @@
 {
-  "name": "sport-complex-pro",
+  "name": "sport-complex-pro-frontend",
   "private": true,
   "version": "0.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "api:dev": "cd rust-server && cargo run",
-    "api:start": "cd rust-server && cargo run --release",
+    "api:dev": "cd ../backend && cargo run",
+    "api:start": "cd ../backend && cargo run --release",
     "build": "vite build",
     "preview": "vite preview"
   },

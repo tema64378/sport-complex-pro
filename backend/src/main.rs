@@ -27,6 +27,7 @@ use std::{
     time::Duration,
 };
 use tower_http::cors::CorsLayer;
+use tower_http::services::ServeDir;
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -4247,6 +4248,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/payments/tinkoff/sbp-qr", post(tinkoff_sbp_qr))
         .route("/api/payments/tinkoff/sberpay-qr", post(tinkoff_sberpay_qr))
         .with_state(state)
+        .fallback_service(axum::routing::get_service(ServeDir::new("../../dist")).handle_error(|err| async move {
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("Static file error: {}", err))
+        }))
         .layer(CorsLayer::very_permissive());
 
     let addr = format!("0.0.0.0:{}", port);
