@@ -4260,3 +4260,117 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Timelike;
+    use serde_json::json;
+
+    #[test]
+    fn looks_like_email_validates_basic_shape() {
+        assert!(looks_like_email("user@example.com"));
+        assert!(looks_like_email("name.surname@sub.domain.ru"));
+
+        assert!(!looks_like_email(""));
+        assert!(!looks_like_email("plain-address"));
+        assert!(!looks_like_email("user@localhost"));
+        assert!(!looks_like_email("user@.domain.com"));
+        assert!(!looks_like_email("user @domain.com"));
+    }
+
+    #[test]
+    fn email_needs_update_detects_vk_placeholders() {
+        assert!(email_needs_update(""));
+        assert!(email_needs_update("vk_demo@vk.com"));
+        assert!(email_needs_update("any_user@vk.local"));
+        assert!(!email_needs_update("client@mail.ru"));
+    }
+
+    #[test]
+    fn parse_date_supports_multiple_formats() {
+        let d = parse_date("2026-03-16").expect("yyyy-mm-dd should parse");
+        assert_eq!(d.year(), 2026);
+        assert_eq!(d.month(), 3);
+        assert_eq!(d.day(), 16);
+
+        let from_short_dt = parse_date("2026-03-16 09:45").expect("short datetime should parse");
+        assert_eq!(from_short_dt, d);
+
+        let from_rfc = parse_date("2026-03-16T12:00:00+03:00").expect("rfc3339 should parse");
+        assert_eq!(from_rfc.year(), 2026);
+        assert_eq!(from_rfc.month(), 3);
+        assert_eq!(from_rfc.day(), 16);
+
+        assert!(parse_date("16.03.2026").is_none());
+    }
+
+    #[test]
+    fn parse_date_time_supports_empty_and_seconds() {
+        let dt_default = parse_date_time("2026-03-16", "").expect("empty time should default to 00:00");
+        assert_eq!(dt_default.hour(), 0);
+        assert_eq!(dt_default.minute(), 0);
+
+        let dt_with_seconds =
+            parse_date_time("2026-03-16", "09:45:30").expect("time with seconds should parse");
+        assert_eq!(dt_with_seconds.hour(), 9);
+        assert_eq!(dt_with_seconds.minute(), 45);
+        assert_eq!(dt_with_seconds.second(), 30);
+
+        assert!(parse_date_time("2026-03-16", "not-a-time").is_none());
+    }
+
+    #[test]
+    fn format_rub_adds_group_separators() {
+        assert_eq!(format_rub(0), "0");
+        assert_eq!(format_rub(1_000), "1 000");
+        assert_eq!(format_rub(1_234_567), "1 234 567");
+        assert_eq!(format_rub(-123_456), "-123 456");
+    }
+
+    #[test]
+    fn value_parsers_handle_strings_and_booleans() {
+        let payload = json!({
+            "count": "42",
+            "flag_true_text": "yes",
+            "flag_true_bool": true,
+            "flag_false_num": 0
+        });
+
+        assert_eq!(value_i64(&payload, "count"), 42);
+        assert_eq!(value_i64(&payload, "missing"), 0);
+
+        assert!(value_bool(&payload, "flag_true_text"));
+        assert!(value_bool(&payload, "flag_true_bool"));
+        assert!(!value_bool(&payload, "flag_false_num"));
+        assert!(!value_bool(&payload, "missing"));
+    }
+
+    #[test]
+    fn body_i64_uses_default_on_invalid() {
+        let body = json!({
+            "a": 100,
+            "b": "250",
+            "c": "oops"
+        });
+
+        assert_eq!(body_i64(&body, "a", 7), 100);
+        assert_eq!(body_i64(&body, "b", 7), 250);
+        assert_eq!(body_i64(&body, "c", 7), 7);
+        assert_eq!(body_i64(&body, "missing", 7), 7);
+    }
+
+    #[test]
+    fn password_helpers_support_plain_and_argon2() {
+        assert!(needs_password_upgrade("plain-password"));
+        assert!(!needs_password_upgrade("$argon2id$v=19$example"));
+
+        assert!(verify_password("secret", "secret"));
+        assert!(!verify_password("secret", "other"));
+
+        let hashed = hash_password_raw("secret").expect("hash generation should work");
+        assert!(is_argon2_hash(&hashed));
+        assert!(verify_password("secret", &hashed));
+        assert!(!verify_password("wrong", &hashed));
+    }
+}
