@@ -182,6 +182,8 @@ a {
 }
 
 .top-header-inner {
+  position: relative;
+  z-index: 3;
   border-radius: 18px;
   padding: 14px 18px;
   display: flex;
@@ -239,10 +241,12 @@ a {
 }
 
 .top-actions {
+  position: relative;
+  z-index: 5;
   display: flex;
   align-items: center;
   gap: 10px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
 }
 
@@ -369,6 +373,8 @@ a {
 }
 
 .top-nav {
+  position: relative;
+  z-index: 1;
   margin-top: 10px;
   border-radius: 16px;
   padding: 8px;
@@ -729,6 +735,10 @@ button:hover {
 }
 
 @media (max-width: 1100px) {
+  .top-actions {
+    flex-wrap: wrap;
+  }
+
   .news-toolbar-controls {
     grid-template-columns: 1fr;
   }
@@ -875,6 +885,7 @@ button:hover {
 
 .theme-box {
   position: relative;
+  z-index: 60;
 }
 
 .theme-popover {
@@ -887,7 +898,7 @@ button:hover {
   background: var(--surface-strong);
   box-shadow: var(--shadow-soft);
   padding: 8px;
-  z-index: 40;
+  z-index: 120;
 }
 
 .theme-title {
@@ -1283,5 +1294,197 @@ button:hover {
 
   .inbox-actions .action-btn {
     width: 100%;
+  }
+}
+
+/* --- Runtime UX pack --- */
+.page-fade {
+  animation: pageFadeIn 0.28s ease;
+}
+
+@keyframes pageFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.network-banner {
+  margin: 0 0 12px;
+  min-height: 42px;
+  border-radius: 12px;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
+  padding: 9px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+[data-theme='dark'] .network-banner,
+[data-theme='ocean'] .network-banner,
+[data-theme='sunset'] .network-banner {
+  color: #facc15;
+  background: rgba(250, 204, 21, 0.1);
+}
+
+.page-loading {
+  padding: 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.page-loading-line {
+  width: 100%;
+  border-radius: 12px;
+  min-height: 18px;
+}
+
+.page-loading-line--title {
+  min-height: 28px;
+  width: min(420px, 100%);
+}
+
+.page-loading-line--short {
+  width: min(260px, 72%);
+}
+
+.page-loading-grid {
+  margin-top: 6px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  background: transparent;
+}
+
+.page-loading-tile {
+  min-height: 88px;
+  border-radius: 12px;
+}
+
+.toast-stack {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 300;
+  display: grid;
+  gap: 8px;
+  width: min(390px, calc(100vw - 28px));
+}
+
+.toast-item {
+  border-radius: 12px;
+  border: 1px solid var(--card-border);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow-soft);
+  color: var(--text-primary);
+  padding: 10px 12px;
+  display: grid;
+  align-items: center;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  animation: toastIn 0.2s ease;
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.toast-item p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.toast-close {
+  min-width: 28px;
+  min-height: 28px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.toast-info {
+  border-left: 3px solid #2563eb;
+}
+
+.toast-success {
+  border-left: 3px solid #16a34a;
+}
+
+.toast-warning {
+  border-left: 3px solid #d97706;
+}
+
+.toast-error {
+  border-left: 3px solid #dc2626;
+}
+
+.app-crash-screen {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: var(--bg);
+}
+
+.app-crash-card {
+  width: min(640px, 100%);
+  padding: 20px;
+  display: grid;
+  gap: 12px;
+}
+
+.app-crash-card h1 {
+  font-size: 26px;
+}
+
+.app-crash-card p {
+  color: var(--text-secondary);
+}
+
+.app-crash-error {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(220, 38, 38, 0.11);
+  color: #b91c1c !important;
+  word-break: break-word;
+}
+
+.app-crash-actions {
+  margin-top: 4px;
+}
+
+@media (max-width: 760px) {
+  .toast-stack {
+    right: 10px;
+    left: 10px;
+    width: auto;
+    bottom: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  button:hover {
+    transform: none;
   }
 }

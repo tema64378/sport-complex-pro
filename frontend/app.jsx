@@ -1,28 +1,36 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { logoutUser, fetchMe } from './apiClient';
 import TopNav from './components/TopNav';
-import Dashboard from './pages/Dashboard';
-import Members from './pages/Members';
-import Trainers from './pages/Trainers';
-import Classes from './pages/Classes';
-import Bookings from './pages/Bookings';
-import Payments from './pages/Payments';
-import Analytics from './pages/Analytics';
-import Reports from './pages/Reports';
-import Settings from './pages/Settings';
-import Users from './pages/Users';
-import Auth from './pages/Auth';
-import Services from './pages/Services';
-import Deals from './pages/Deals';
-import Forecast from './pages/Forecast';
-import Search from './pages/Search';
-import Client from './pages/Client';
-import Notifications from './pages/Notifications';
-import Memberships from './pages/Memberships';
-import Calendar from './pages/Calendar';
-import Crm from './pages/Crm';
-import DatabaseAdmin from './pages/DatabaseAdmin';
-import News from './pages/News';
+import ToastViewport from './components/ToastViewport';
+
+const PAGE_LOADERS = {
+  dashboard: () => import('./pages/Dashboard'),
+  news: () => import('./pages/News'),
+  notifications: () => import('./pages/Notifications'),
+  members: () => import('./pages/Members'),
+  crm: () => import('./pages/Crm'),
+  trainers: () => import('./pages/Trainers'),
+  memberships: () => import('./pages/Memberships'),
+  classes: () => import('./pages/Classes'),
+  bookings: () => import('./pages/Bookings'),
+  calendar: () => import('./pages/Calendar'),
+  services: () => import('./pages/Services'),
+  deals: () => import('./pages/Deals'),
+  payments: () => import('./pages/Payments'),
+  analytics: () => import('./pages/Analytics'),
+  forecast: () => import('./pages/Forecast'),
+  reports: () => import('./pages/Reports'),
+  search: () => import('./pages/Search'),
+  users: () => import('./pages/Users'),
+  database: () => import('./pages/DatabaseAdmin'),
+  settings: () => import('./pages/Settings'),
+  client: () => import('./pages/Client'),
+  auth: () => import('./pages/Auth'),
+};
+
+const PAGE_COMPONENTS = Object.fromEntries(
+  Object.entries(PAGE_LOADERS).map(([key, loader]) => [key, lazy(loader)]),
+);
 
 const THEME_OPTIONS = [
   { id: 'light', label: 'Светлая' },
@@ -81,6 +89,67 @@ const PAGE_META = {
   auth: { title: 'Вход и регистрация', subtitle: 'Авторизация и управление доступом.' },
 };
 
+const ROLE_ACCESS = {
+  dashboard: ['Администратор', 'Тренер', 'Клиент'],
+  news: ['Администратор', 'Тренер', 'Клиент'],
+  auth: ['Администратор', 'Тренер', 'Клиент'],
+  notifications: ['Администратор', 'Тренер', 'Клиент'],
+  client: ['Клиент'],
+  members: ['Администратор', 'Тренер'],
+  trainers: ['Администратор'],
+  memberships: ['Администратор', 'Тренер'],
+  classes: ['Администратор', 'Тренер'],
+  bookings: ['Администратор', 'Тренер', 'Клиент'],
+  calendar: ['Администратор', 'Тренер'],
+  services: ['Администратор', 'Тренер', 'Клиент'],
+  crm: ['Администратор', 'Тренер'],
+  deals: ['Администратор', 'Тренер'],
+  payments: ['Администратор', 'Тренер', 'Клиент'],
+  analytics: ['Администратор', 'Тренер'],
+  forecast: ['Администратор', 'Тренер'],
+  reports: ['Администратор'],
+  search: ['Администратор', 'Тренер'],
+  settings: ['Администратор'],
+  users: ['Администратор'],
+  database: ['Администратор'],
+};
+
+function pageLoader(pageId, props = {}) {
+  const PageComponent = PAGE_COMPONENTS[pageId] || PAGE_COMPONENTS.dashboard;
+  return <PageComponent {...props} />;
+}
+
+function PageFallback() {
+  return (
+    <div className="page-loading glass-card">
+      <div className="skeleton-card page-loading-line page-loading-line--title" />
+      <div className="skeleton-card page-loading-line" />
+      <div className="skeleton-card page-loading-line page-loading-line--short" />
+      <div className="skeleton-card page-loading-grid">
+        <div className="skeleton-card page-loading-tile" />
+        <div className="skeleton-card page-loading-tile" />
+        <div className="skeleton-card page-loading-tile" />
+      </div>
+    </div>
+  );
+}
+
+function AccessDenied({ role }) {
+  return (
+    <div className="glass-card p-6">
+      <h2 className="text-xl font-bold text-slate-900">Нет доступа</h2>
+      <p className="text-slate-400 mt-2">У роли "{role}" нет прав на просмотр этого раздела.</p>
+    </div>
+  );
+}
+
+const TOAST_COLORS = {
+  info: 'info',
+  success: 'success',
+  warning: 'warning',
+  error: 'error',
+};
+
 function App() {
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [session, setSession] = useState(() => {
@@ -96,23 +165,116 @@ function App() {
       if (localStorage.getItem('theme')) return localStorage.getItem('theme');
       const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
       return prefersDark ? 'dark' : 'light';
-    } catch (e) { return 'light'; }
+    } catch (e) {
+      return 'light';
+    }
   });
+  const [isOnline, setIsOnline] = useState(() => {
+    if (typeof navigator === 'undefined') return true;
+    return navigator.onLine;
+  });
+  const [toasts, setToasts] = useState([]);
+  const toastTimersRef = useRef(new Map());
+
+  const pushToast = useCallback((message, type = 'info') => {
+    if (!message) return;
+    const safeType = TOAST_COLORS[type] ? type : 'info';
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    setToasts((prev) => {
+      const next = [...prev, { id, message: String(message), type: safeType }];
+      return next.slice(-4);
+    });
+
+    const timeoutId = window.setTimeout(() => {
+      setToasts((prev) => prev.filter((item) => item.id !== id));
+      toastTimersRef.current.delete(id);
+    }, 3600);
+
+    toastTimersRef.current.set(id, timeoutId);
+  }, []);
+
+  const dismissToast = useCallback((id) => {
+    const timeoutId = toastTimersRef.current.get(id);
+    if (timeoutId) {
+      window.clearTimeout(timeoutId);
+      toastTimersRef.current.delete(id);
+    }
+    setToasts((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      for (const timeoutId of toastTimersRef.current.values()) {
+        window.clearTimeout(timeoutId);
+      }
+      toastTimersRef.current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const nativeAlert = window.alert.bind(window);
+    window.__sportProToast = (message, type = 'info') => {
+      pushToast(message, type);
+    };
+
+    window.alert = (message) => {
+      pushToast(message, 'info');
+    };
+
+    return () => {
+      window.alert = nativeAlert;
+      delete window.__sportProToast;
+    };
+  }, [pushToast]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    function handleOnline() {
+      setIsOnline(true);
+      pushToast('Подключение восстановлено.', 'success');
+    }
+
+    function handleOffline() {
+      setIsOnline(false);
+      pushToast('Нет подключения к интернету. Работаем в локальном режиме.', 'warning');
+    }
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [pushToast]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    try { localStorage.setItem('theme', theme); } catch (e) {}
+    try {
+      localStorage.setItem('theme', theme);
+    } catch (e) {}
   }, [theme]);
 
   useEffect(() => {
     const url = new URL(window.location.href);
     const vkToken = url.searchParams.get('vk_token');
     if (vkToken) {
-      try { localStorage.setItem('auth_token', vkToken); } catch (e) {}
+      try {
+        localStorage.setItem('auth_token', vkToken);
+      } catch (e) {}
       url.searchParams.delete('vk_token');
       window.history.replaceState({}, '', url.toString());
     }
     if (session) return;
+    let hasToken = false;
+    try {
+      hasToken = Boolean(localStorage.getItem('auth_token'));
+    } catch (e) {}
+    if (!hasToken) return;
     let mounted = true;
     (async () => {
       try {
@@ -120,18 +282,21 @@ function App() {
         if (!mounted) return;
         const nextSession = { ...res.user, loginAt: new Date().toISOString() };
         setSession(nextSession);
-        try { localStorage.setItem('auth_session', JSON.stringify(nextSession)); } catch (e) {}
+        try {
+          localStorage.setItem('auth_session', JSON.stringify(nextSession));
+        } catch (e) {}
       } catch (e) {}
     })();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, [session]);
 
   const mustCompleteEmail = Boolean(
-    session && (
-      session.needsEmail ||
-      (typeof session.email === 'string' && session.email.toLowerCase().endsWith('@vk.local')) ||
-      (typeof session.email === 'string' && session.email.toLowerCase() === 'vk_demo@vk.com')
-    )
+    session
+      && (session.needsEmail
+      || (typeof session.email === 'string' && session.email.toLowerCase().endsWith('@vk.local'))
+      || (typeof session.email === 'string' && session.email.toLowerCase() === 'vk_demo@vk.com')),
   );
 
   useEffect(() => {
@@ -140,31 +305,6 @@ function App() {
     }
   }, [mustCompleteEmail, currentPage]);
 
-  const roleAccess = {
-    dashboard: ['Администратор', 'Тренер', 'Клиент'],
-    news: ['Администратор', 'Тренер', 'Клиент'],
-    auth: ['Администратор', 'Тренер', 'Клиент'],
-    notifications: ['Администратор', 'Тренер', 'Клиент'],
-    client: ['Клиент'],
-    members: ['Администратор', 'Тренер'],
-    trainers: ['Администратор'],
-    memberships: ['Администратор', 'Тренер'],
-    classes: ['Администратор', 'Тренер'],
-    bookings: ['Администратор', 'Тренер', 'Клиент'],
-    calendar: ['Администратор', 'Тренер'],
-    services: ['Администратор', 'Тренер', 'Клиент'],
-    crm: ['Администратор', 'Тренер'],
-    deals: ['Администратор', 'Тренер'],
-    payments: ['Администратор', 'Тренер', 'Клиент'],
-    analytics: ['Администратор', 'Тренер'],
-    forecast: ['Администратор', 'Тренер'],
-    reports: ['Администратор'],
-    search: ['Администратор', 'Тренер'],
-    settings: ['Администратор'],
-    users: ['Администратор'],
-    database: ['Администратор'],
-  };
-
   const visibleItems = useMemo(() => {
     if (!session) {
       return MENU_ITEMS.filter((item) => item.id === 'news' || item.id === 'auth');
@@ -172,7 +312,7 @@ function App() {
     if (mustCompleteEmail) {
       return MENU_ITEMS.filter((item) => item.id === 'auth');
     }
-    return MENU_ITEMS.filter((item) => roleAccess[item.id]?.includes(session.role));
+    return MENU_ITEMS.filter((item) => ROLE_ACCESS[item.id]?.includes(session.role));
   }, [session, mustCompleteEmail]);
 
   useEffect(() => {
@@ -183,76 +323,69 @@ function App() {
     }
   }, [currentPage, visibleItems]);
 
-  const isAllowed = currentPage === 'news' || (session && roleAccess[currentPage]?.includes(session.role));
+  const prefetchPage = useCallback((pageId) => {
+    const loader = PAGE_LOADERS[pageId];
+    if (loader) {
+      void loader();
+    }
+  }, []);
+
+  useEffect(() => {
+    ['news', 'auth', 'dashboard'].forEach(prefetchPage);
+  }, [prefetchPage]);
+
+  useEffect(() => {
+    if (!session) return;
+    if (session.role === 'Клиент') {
+      ['client', 'bookings', 'payments', 'news'].forEach(prefetchPage);
+      return;
+    }
+    ['members', 'bookings', 'payments', 'analytics'].forEach(prefetchPage);
+  }, [session, prefetchPage]);
+
+  const isAllowed = currentPage === 'news' || (session && ROLE_ACCESS[currentPage]?.includes(session.role));
 
   const renderPage = () => {
-    if (!session && currentPage !== 'auth' && currentPage !== 'news') return <Auth session={session} setSession={setSession} />;
-    if (mustCompleteEmail && currentPage !== 'auth') return <Auth session={session} setSession={setSession} />;
-    if (session && currentPage !== 'news' && !isAllowed) {
-      return (
-        <div className="glass-card p-6">
-          <h2 className="text-xl font-bold text-slate-900">Нет доступа</h2>
-          <p className="text-slate-400 mt-2">У роли "{session.role}" нет прав на просмотр этого раздела.</p>
-        </div>
-      );
+    if (!session && currentPage !== 'auth' && currentPage !== 'news') {
+      return pageLoader('auth', { session, setSession });
     }
+
+    if (mustCompleteEmail && currentPage !== 'auth') {
+      return pageLoader('auth', { session, setSession });
+    }
+
+    if (session && currentPage !== 'news' && !isAllowed) {
+      return <AccessDenied role={session.role} />;
+    }
+
     switch (currentPage) {
       case 'dashboard':
-        return session?.role === 'Клиент' ? <Client onNavigate={setCurrentPage} /> : <Dashboard onNavigate={setCurrentPage} />;
-      case 'news':
-        return <News />;
-      case 'members':
-        return <Members />;
-      case 'trainers':
-        return <Trainers />;
-      case 'memberships':
-        return <Memberships />;
-      case 'classes':
-        return <Classes />;
-      case 'bookings':
-        return <Bookings />;
-      case 'calendar':
-        return <Calendar />;
-      case 'payments':
-        return <Payments />;
-      case 'notifications':
-        return <Notifications />;
-      case 'analytics':
-        return <Analytics />;
-      case 'reports':
-        return <Reports />;
-      case 'settings':
-        return <Settings />;
-      case 'users':
-        return <Users />;
-      case 'database':
-        return <DatabaseAdmin />;
+        return session?.role === 'Клиент'
+          ? pageLoader('client', { onNavigate: setCurrentPage })
+          : pageLoader('dashboard', { onNavigate: setCurrentPage });
       case 'auth':
-        return <Auth session={session} setSession={setSession} />;
-      case 'services':
-        return <Services />;
-      case 'crm':
-        return <Crm />;
-      case 'deals':
-        return <Deals />;
-      case 'forecast':
-        return <Forecast />;
-      case 'search':
-        return <Search />;
+        return pageLoader('auth', { session, setSession });
       case 'client':
-        return <Client onNavigate={setCurrentPage} />;
+        return pageLoader('client', { onNavigate: setCurrentPage });
       default:
-        return <Dashboard />;
+        return pageLoader(currentPage);
     }
   };
 
   function handleLogout() {
     (async () => {
-      try { await logoutUser(); } catch (e) {}
-      try { localStorage.removeItem('auth_session'); } catch (e) {}
-      try { localStorage.removeItem('auth_token'); } catch (e) {}
+      try {
+        await logoutUser();
+      } catch (e) {}
+      try {
+        localStorage.removeItem('auth_session');
+      } catch (e) {}
+      try {
+        localStorage.removeItem('auth_token');
+      } catch (e) {}
       setSession(null);
       setCurrentPage('news');
+      pushToast('Сессия завершена.', 'info');
     })();
   }
 
@@ -263,7 +396,7 @@ function App() {
       <div className="site-glow site-glow--one" />
       <div className="site-glow site-glow--two" />
       <TopNav
-        currentPage={currentPage} 
+        currentPage={currentPage}
         setCurrentPage={setCurrentPage}
         menuItems={visibleItems}
         session={session}
@@ -272,10 +405,11 @@ function App() {
         themeOptions={THEME_OPTIONS}
         onThemeChange={setTheme}
         mustCompleteEmail={mustCompleteEmail}
+        onMenuPrefetch={prefetchPage}
       />
       <div className="site-content">
         {currentPage !== 'auth' && (
-          <header className="page-intro glass-card">
+          <header className="page-intro glass-card reveal-up">
             <div>
               <h1 className="page-title">{pageMeta.title}</h1>
               <p className="page-subtitle">{pageMeta.subtitle}</p>
@@ -294,12 +428,24 @@ function App() {
             </div>
           </header>
         )}
+
+        {!isOnline && (
+          <div className="network-banner">
+            <i className="fas fa-wifi" />
+            Соединение потеряно. Некоторые функции API временно недоступны.
+          </div>
+        )}
+
         <main className="site-main">
-          <div className="page-content">
-            {renderPage()}
+          <div key={currentPage} className="page-content page-fade">
+            <Suspense fallback={<PageFallback />}>
+              {renderPage()}
+            </Suspense>
           </div>
         </main>
       </div>
+
+      <ToastViewport toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

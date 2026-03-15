@@ -1,69 +1,171 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { notify } from '../utils/toast';
+
+const SETTINGS_STORAGE_KEY = 'settings_general_v1';
+const NOTIFICATIONS_STORAGE_KEY = 'settings_notifications_v1';
+
+const DEFAULT_SETTINGS = {
+  gymName: 'Спортивный Комплекс Pro',
+  email: 'admin@sportcomplex.com',
+  phone: '+7 (495) 123-45-67',
+  address: 'ул. Фитнес, 10, Москва, Россия',
+  currency: 'RUB',
+  timezone: 'Europe/Moscow',
+  language: 'ru',
+  theme: 'light',
+};
+
+const DEFAULT_NOTIFICATION_SETTINGS = {
+  emailNotifications: true,
+  smsNotifications: true,
+  classReminders: true,
+  paymentAlerts: true,
+  membershipAlerts: true,
+  systemUpdates: false,
+};
+
+const DATA_KEYS = [
+  'members',
+  'trainers',
+  'classes',
+  'bookings',
+  'payments',
+  'notifications',
+  'membership_plans',
+  'crm_notes',
+  'calendar_slots',
+  'deals',
+  'receipts',
+  'role_permissions',
+  'payments_density_v2',
+];
+
+const DATA_KEY_PREFIXES = [
+  'members_filters_',
+  'members_density_',
+  'bookings_density_',
+];
+
+function readStoredJson(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return { ...fallback, ...JSON.parse(raw) };
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function removeLocalData({ includeAuth = false } = {}) {
+  let removed = 0;
+
+  for (const key of DATA_KEYS) {
+    if (localStorage.getItem(key) !== null) {
+      localStorage.removeItem(key);
+      removed += 1;
+    }
+  }
+
+  for (const key of Object.keys(localStorage)) {
+    if (DATA_KEY_PREFIXES.some((prefix) => key.startsWith(prefix))) {
+      localStorage.removeItem(key);
+      removed += 1;
+    }
+  }
+
+  if (includeAuth) {
+    for (const key of ['auth_session', 'auth_token', 'auth_users']) {
+      if (localStorage.getItem(key) !== null) {
+        localStorage.removeItem(key);
+        removed += 1;
+      }
+    }
+  }
+
+  return removed;
+}
 
 export default function Settings() {
-  const [settings, setSettings] = useState({
-    gymName: 'Спортивный Комплекс Pro',
-    email: 'admin@sportcomplex.com',
-    phone: '+7 (495) 123-45-67',
-    address: 'ул. Фитнес, 10, Москва, Россия',
-    currency: 'RUB',
-    timezone: 'Europe/Moscow',
-    language: 'ru',
-    theme: 'light',
+  const [settings, setSettings] = useState(() => readStoredJson(SETTINGS_STORAGE_KEY, DEFAULT_SETTINGS));
+  const [notificationSettings, setNotificationSettings] = useState(() => {
+    return readStoredJson(NOTIFICATIONS_STORAGE_KEY, DEFAULT_NOTIFICATION_SETTINGS);
   });
-
-  const [notificationSettings, setNotificationSettings] = useState({
-    emailNotifications: true,
-    smsNotifications: true,
-    classReminders: true,
-    paymentAlerts: true,
-    membershipAlerts: true,
-    systemUpdates: false,
-  });
-
   const [passwords, setPasswords] = useState({
     currentPassword: '',
     newPassword: '',
     confirmPassword: '',
   });
 
+  const notificationRows = useMemo(
+    () => [
+      { key: 'emailNotifications', label: 'Уведомления по Email', description: 'Получать обновления по электронной почте' },
+      { key: 'smsNotifications', label: 'SMS уведомления', description: 'Получать SMS-уведомления' },
+      { key: 'classReminders', label: 'Напоминания о занятиях', description: 'Напоминать участникам о предстоящих занятиях' },
+      { key: 'paymentAlerts', label: 'Оповещения о платежах', description: 'Уведомлять о неудачных или ожидающих платежах' },
+      { key: 'membershipAlerts', label: 'Оповещения об абонементах', description: 'Информировать об изменениях в абонементах' },
+      { key: 'systemUpdates', label: 'Обновления системы', description: 'Получать уведомления об обновлениях системы' },
+    ],
+    [],
+  );
+
   const handleSettingChange = (key, value) => {
-    setSettings({ ...settings, [key]: value });
+    setSettings((prev) => ({ ...prev, [key]: value }));
   };
 
   const handleNotificationChange = (key) => {
-    setNotificationSettings({ ...notificationSettings, [key]: !notificationSettings[key] });
+    setNotificationSettings((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   const handlePasswordChange = (key, value) => {
-    setPasswords({ ...passwords, [key]: value });
+    setPasswords((prev) => ({ ...prev, [key]: value }));
   };
 
   const handleSaveSettings = () => {
-    alert('Настройки сохранены успешно!');
+    try {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+      localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(notificationSettings));
+      notify('Настройки сохранены.', 'success');
+    } catch (e) {
+      notify('Не удалось сохранить настройки локально.', 'error');
+    }
   };
 
   const handleChangePassword = () => {
-    if (passwords.newPassword !== passwords.confirmPassword) {
-      alert('Пароли не совпадают!');
+    if (!passwords.newPassword.trim()) {
+      notify('Новый пароль не может быть пустым.', 'warning');
       return;
     }
-    alert('Пароль изменён успешно!');
+    if (passwords.newPassword !== passwords.confirmPassword) {
+      notify('Пароли не совпадают.', 'warning');
+      return;
+    }
+    notify('Пароль изменён (демо-режим).', 'success');
     setPasswords({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  };
+
+  const handleClearDemoData = () => {
+    const removed = removeLocalData({ includeAuth: false });
+    notify(`Локальные рабочие данные очищены: ${removed}.`, 'success');
+  };
+
+  const handleFullReset = () => {
+    if (!window.confirm('Сбросить демо-данные и выйти из текущей сессии?')) return;
+
+    const removed = removeLocalData({ includeAuth: true });
+    notify(`Полный локальный сброс выполнен: ${removed}.`, 'success');
+    window.location.reload();
   };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Параметры</h1>
-        <p className="text-gray-600 text-sm mt-2">Управление настройками клуба</p>
+        <p className="text-gray-600 text-sm mt-2">Управление настройками клуба и демо-средой</p>
       </div>
 
-      {/* General Settings */}
       <div className="glass-card p-6">
         <h2 className="text-xl font-bold text-slate-900 mb-6 pb-4 border-b border-white/10">Общие настройки</h2>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-2">Название клуба</label>
@@ -128,6 +230,7 @@ export default function Settings() {
         </div>
 
         <button
+          type="button"
           onClick={handleSaveSettings}
           className="mt-6 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-colors font-medium"
         >
@@ -135,24 +238,17 @@ export default function Settings() {
         </button>
       </div>
 
-      {/* Notification Settings */}
       <div className="glass-card p-6">
         <h2 className="text-xl font-bold text-slate-900 mb-6 pb-4 border-b border-white/10">Предпочтения уведомлений</h2>
         <div className="space-y-4">
-          {[
-            { key: 'emailNotifications', label: 'Уведомления по Email', description: 'Получать обновления по электронной почте' },
-            { key: 'smsNotifications', label: 'SMS уведомления', description: 'Получать SMS-уведомления' },
-            { key: 'classReminders', label: 'Напоминания о занятиях', description: 'Напоминать участникам о предстоящих занятиях' },
-            { key: 'paymentAlerts', label: 'Оповещения о платежах', description: 'Уведомлять о неудачных или ожидающих платежах' },
-            { key: 'membershipAlerts', label: 'Оповещения об абонементах', description: 'Информировать об изменениях в абонементах' },
-            { key: 'systemUpdates', label: 'Обновления системы', description: 'Получать уведомления об обновлениях системы' },
-          ].map((notification) => (
+          {notificationRows.map((notification) => (
             <div key={notification.key} className="flex items-center justify-between p-4 bg-white/5 rounded-lg">
               <div>
                 <p className="font-medium text-slate-900">{notification.label}</p>
                 <p className="text-sm text-slate-400">{notification.description}</p>
               </div>
               <button
+                type="button"
                 onClick={() => handleNotificationChange(notification.key)}
                 className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
                   notificationSettings[notification.key] ? 'bg-green-600' : 'bg-gray-300'
@@ -169,10 +265,9 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Security Settings */}
       <div className="glass-card p-6">
         <h2 className="text-xl font-bold text-slate-900 mb-6 pb-4 border-b border-white/10">Параметры безопасности</h2>
-        
+
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-2">Текущий пароль</label>
@@ -207,6 +302,7 @@ export default function Settings() {
         </div>
 
         <button
+          type="button"
           onClick={handleChangePassword}
           className="mt-6 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-colors font-medium"
         >
@@ -214,18 +310,25 @@ export default function Settings() {
         </button>
       </div>
 
-      {/* Danger Zone */}
       <div className="glass-card p-6">
-        <h2 className="text-xl font-bold text-red-600 mb-6 pb-4 border-b border-red-200/30">Опасная зона</h2>
+        <h2 className="text-xl font-bold text-red-600 mb-4 pb-4 border-b border-red-200/30">Очистка и демо-режим</h2>
         <p className="text-sm text-red-800 mb-4">
-          Эти действия необратимы. Пожалуйста, продолжите осторожно.
+          Используйте очистку перед демонстрацией комиссии: можно быстро вернуть систему в чистое состояние.
         </p>
-        <div className="flex gap-4">
-          <button className="px-6 py-2 border border-red-300 text-red-600 hover:bg-red-50 rounded-lg transition-colors font-medium">
-            Найти данные
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={handleClearDemoData}
+            className="px-6 py-2 border border-red-300 text-red-600 hover:bg-red-50 rounded-lg transition-colors font-medium"
+          >
+            Очистить рабочие данные
           </button>
-          <button className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium">
-            Удалить аккаунт
+          <button
+            type="button"
+            onClick={handleFullReset}
+            className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium"
+          >
+            Полный локальный сброс
           </button>
         </div>
       </div>

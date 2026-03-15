@@ -1,3 +1,4 @@
+import { notify } from './utils/toast';
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 function getToken() {
@@ -8,7 +9,16 @@ async function apiFetch(url, options = {}) {
   const token = getToken();
   const headers = { ...(options.headers || {}) };
   if (token) headers.Authorization = `Bearer ${token}`;
-  return fetch(url, { ...options, headers });
+  try {
+    const res = await fetch(url, { ...options, headers });
+    if (!res.ok && res.status >= 500) {
+      notify(`Сервер временно недоступен (HTTP ${res.status}).`, 'error');
+    }
+    return res;
+  } catch (error) {
+    notify('Не удалось подключиться к API. Проверьте локальный backend.', 'error');
+    throw error;
+  }
 }
 
 async function isApiAvailable() {

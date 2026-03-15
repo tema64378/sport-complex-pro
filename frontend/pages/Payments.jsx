@@ -1,5 +1,29 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchPayments, createPayment, updatePayment, deletePayment, isApiAvailable, fetchPaymentProviders, createMockPaymentLink, createYooKassaPayment, createTinkoffInit, createTinkoffSbpQr, createTinkoffSberpayQr } from '../apiClient';
+import { notify } from '../utils/toast';
+
+const CLOUDPAYMENTS_SCRIPT_SRC = 'https://widget.cloudpayments.ru/bundles/cloudpayments';
+
+function ensureCloudPaymentsLoaded() {
+  if (window.CloudPayments) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-cloudpayments="1"]');
+    if (existing) {
+      existing.addEventListener('load', () => resolve(), { once: true });
+      existing.addEventListener('error', () => reject(new Error('CloudPayments load failed')), { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = CLOUDPAYMENTS_SCRIPT_SRC;
+    script.async = true;
+    script.dataset.cloudpayments = '1';
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('CloudPayments load failed'));
+    document.head.appendChild(script);
+  });
+}
 
 export default function Payments() {
   const [payments, setPayments] = useState([]);
@@ -169,12 +193,19 @@ export default function Payments() {
     }
   }
 
-  function openCloudPaymentsWidget() {
+  async function openCloudPaymentsWidget() {
     const publicId = import.meta.env.VITE_CLOUDPAYMENTS_PUBLIC_ID;
-    if (!publicId || !window.CloudPayments) {
-      alert('Нужен VITE_CLOUDPAYMENTS_PUBLIC_ID');
+    if (!publicId) {
+      notify('Нужен VITE_CLOUDPAYMENTS_PUBLIC_ID', 'warning');
       return;
     }
+    try {
+      await ensureCloudPaymentsLoaded();
+    } catch (e) {
+      notify('Не удалось загрузить CloudPayments Widget.', 'error');
+      return;
+    }
+
     const widget = new window.CloudPayments();
     widget.pay('charge', {
       publicId,

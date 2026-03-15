@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 export default function TopNav({
   currentPage,
@@ -10,14 +10,41 @@ export default function TopNav({
   onThemeChange,
   themeOptions,
   mustCompleteEmail,
+  onMenuPrefetch,
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
+  const themeBoxRef = useRef(null);
 
   useEffect(() => {
     setMobileOpen(false);
     setThemeOpen(false);
   }, [currentPage]);
+
+  useEffect(() => {
+    if (!themeOpen) return;
+
+    function handleOutsideClick(event) {
+      if (!themeBoxRef.current) return;
+      if (!themeBoxRef.current.contains(event.target)) {
+        setThemeOpen(false);
+      }
+    }
+
+    function handleEscape(event) {
+      if (event.key === 'Escape') setThemeOpen(false);
+    }
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('touchstart', handleOutsideClick, { passive: true });
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [themeOpen]);
 
   const activeTheme = (themeOptions || []).find((item) => item.id === theme);
   const themeLabel = activeTheme ? activeTheme.label : 'Тема';
@@ -44,7 +71,7 @@ export default function TopNav({
         </div>
 
         <div className="top-actions">
-          <div className="theme-box">
+          <div className="theme-box" ref={themeBoxRef}>
             <button
               type="button"
               className={`theme-switch ${theme === 'dark' ? 'is-dark' : ''}`}
@@ -122,6 +149,8 @@ export default function TopNav({
             type="button"
             className={`top-nav-item ${currentPage === item.id ? 'active' : ''}`}
             onClick={() => setCurrentPage(item.id)}
+            onMouseEnter={() => onMenuPrefetch?.(item.id)}
+            onFocus={() => onMenuPrefetch?.(item.id)}
           >
             <i className={item.icon} />
             <span>{item.label}</span>
