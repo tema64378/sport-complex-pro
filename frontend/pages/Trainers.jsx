@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchTrainers, createTrainer, updateTrainer, deleteTrainer, isApiAvailable } from '../api';
+import { fetchTrainers, createTrainer, updateTrainer, deleteTrainer, isApiAvailable } from '../apiClient';
 
 export default function Trainers() {
   const [trainers, setTrainers] = useState([]);

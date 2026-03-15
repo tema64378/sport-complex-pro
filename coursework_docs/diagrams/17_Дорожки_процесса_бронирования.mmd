@@ -1,0 +1,26 @@
+flowchart LR
+    subgraph L1["Дорожка: Пользователь"]
+      A1["Запрос на бронирование"]
+      A2["Подтверждение данных"]
+    end
+
+    subgraph L2["Дорожка: Frontend"]
+      B1["Валидация формы"]
+      B2["POST /api/bookings"]
+      B3["Показ результата"]
+    end
+
+    subgraph L3["Дорожка: Backend API"]
+      C1["Проверка бизнес-правил"]
+      C2["Запись в БД"]
+      C3["Пересчет enrolled"]
+      C4["Формирование ответа"]
+    end
+
+    subgraph L4["Дорожка: SQLite"]
+      D1[("INSERT bookings")]
+      D2[("UPDATE classes")]
+    end
+
+    A1 --> B1 --> B2 --> C1 --> C2 --> D1
+    D1 --> C3 --> D2 --> C4 --> B3 --> A2

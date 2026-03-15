@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { fetchPayments, createPayment, updatePayment, deletePayment, isApiAvailable, fetchPaymentProviders, createMockPaymentLink, createYooKassaPayment, createTinkoffInit, createTinkoffSbpQr, createTinkoffSberpayQr } from '../api';
+import { fetchPayments, createPayment, updatePayment, deletePayment, isApiAvailable, fetchPaymentProviders, createMockPaymentLink, createYooKassaPayment, createTinkoffInit, createTinkoffSbpQr, createTinkoffSberpayQr } from '../apiClient';
 
 export default function Payments() {
   const [payments, setPayments] = useState([]);
@@ -76,6 +76,9 @@ export default function Payments() {
   const totalRevenueNumber = payments.filter(p => p.status === 'Оплачен').reduce((sum, p) => sum + Number(p.amount || 0), 0);
   const formatCurrency = (value) => new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB' }).format(value);
   const totalRevenue = formatCurrency(totalRevenueNumber);
+  const localOrigin = typeof window === 'undefined' ? 'http://localhost:3000' : window.location.origin;
+  const paidUrl = `${localOrigin}/paid`;
+  const failedUrl = `${localOrigin}/failed`;
 
   const filteredPayments = useMemo(() => {
     const q = searchTerm.toLowerCase().trim();
@@ -122,7 +125,7 @@ export default function Payments() {
       const res = await createYooKassaPayment({
         amount: Number(realAmount || 0),
         description: realDescription,
-        returnUrl: 'https://sportcomplecspro.ru/paid',
+        returnUrl: paidUrl,
       });
       const link = res?.confirmation?.confirmation_url || '';
       setYooLink(link || 'Не удалось получить ссылку');
@@ -136,8 +139,8 @@ export default function Payments() {
       const res = await createTinkoffInit({
         amount: Number(realAmount || 0),
         description: realDescription,
-        successUrl: 'https://sportcomplecspro.ru/paid',
-        failUrl: 'https://sportcomplecspro.ru/failed',
+        successUrl: paidUrl,
+        failUrl: failedUrl,
       });
       setTinkoffPaymentId(res?.PaymentId || '');
       setTinkoffLink(res?.PaymentURL || 'Не удалось получить ссылку');

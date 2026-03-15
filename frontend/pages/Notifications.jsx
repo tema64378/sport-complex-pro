@@ -5,7 +5,7 @@ import {
   createNotification as apiCreateNotification,
   updateNotification as apiUpdateNotification,
   deleteNotification as apiDeleteNotification,
-} from '../api';
+} from '../apiClient';
 
 const seed = [
   {

@@ -1,0 +1,9 @@
+stateDiagram-v2
+    [*] --> Created
+    Created --> Pending : запись создана
+    Pending --> Paid : подтверждена оплата
+    Pending --> Failed : ошибка оплаты
+    Failed --> Pending : повторная попытка
+    Paid --> Refunded : возврат (опционально)
+    Paid --> [*]
+    Refunded --> [*]

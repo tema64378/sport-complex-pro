@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { isApiAvailable, fetchMemberships as apiFetchMemberships, createMembership as apiCreateMembership, updateMembership as apiUpdateMembership, deleteMembership as apiDeleteMembership } from '../api';
+import { isApiAvailable, fetchMemberships as apiFetchMemberships, createMembership as apiCreateMembership, updateMembership as apiUpdateMembership, deleteMembership as apiDeleteMembership } from '../apiClient';
 
 const seedPlans = [
   { id: 1, name: 'Базовый', price: 1990, period: 'месяц', visits: 8, perks: ['Тренажёрный зал', 'Групповые занятия'] },

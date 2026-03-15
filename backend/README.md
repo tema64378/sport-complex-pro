@@ -1,22 +1,24 @@
-# Rust API (Axum + SQLite)
+# Backend (Rust + SQLite)
 
-Бэкенд проекта теперь только на Rust.
+Локальный API для Sport Complex Pro.
 
-## Структура
+## Состав
 
-- `backend/src/main.rs` — API
-- `backend/data.db` — SQLite база
-- `backend/backups/` — резервные копии
-- `backend/logs/` — логи запуска
+- `src/main.rs` — сервер Axum
+- `data.db` — база SQLite
+- `logs/` — логи
+- `backups/` — резервные копии
 
-## Быстрый старт
+## Запуск
 
 ```bash
 cd /Users/akovlevartem/Documents/курсовая/backend
 cargo run
 ```
 
-API healthcheck:
+Порт по умолчанию: `4000`.
+
+## Проверка
 
 ```bash
 curl http://localhost:4000/api/ping
@@ -24,7 +26,7 @@ curl http://localhost:4000/api/ping
 
 ## Переменные окружения
 
-- `PORT` (по умолчанию `4000`)
-- `RUST_DB_PATH` (по умолчанию `data.db`)
-- `RUST_BACKUP_DIR` (по умолчанию `backups`)
-- `RUST_BACKUP_KEEP` (по умолчанию `14`)
+- `PORT` — порт API (по умолчанию `4000`)
+- `RUST_DB_PATH` — путь к SQLite (по умолчанию `./data.db`)
+- `RUST_BACKUP_DIR` — каталог бэкапов (по умолчанию `./backups`)
+- `RUST_BACKUP_KEEP` — срок хранения бэкапов в днях (по умолчанию `14`)

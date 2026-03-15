@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { fetchBookings, fetchPayments, fetchReceipts, fetchMembers, isApiAvailable } from '../api';
+import { fetchBookings, fetchPayments, fetchReceipts, fetchMembers, isApiAvailable } from '../apiClient';
 
 function money(value) {
   return `${Number(value || 0).toLocaleString('ru-RU')} ₽`;

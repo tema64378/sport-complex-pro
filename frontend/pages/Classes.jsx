@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchClasses, createClass, updateClass, deleteClass, isApiAvailable, fetchWorkoutTemplates, fetchTrainers } from '../api';
+import { fetchClasses, createClass, updateClass, deleteClass, isApiAvailable, fetchWorkoutTemplates, fetchTrainers } from '../apiClient';
 
 export default function Classes() {
   const [classes, setClasses] = useState([]);

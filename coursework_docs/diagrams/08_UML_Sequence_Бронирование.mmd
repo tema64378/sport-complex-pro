@@ -1,0 +1,14 @@
+sequenceDiagram
+    actor U as Сотрудник
+    participant FE as Frontend
+    participant API as Rust API
+    participant DB as SQLite
+
+    U->>FE: Создать бронирование
+    FE->>API: POST /api/bookings
+    API->>DB: INSERT booking
+    API->>DB: UPDATE classes.enrolled
+    API->>DB: INSERT notifications (опционально)
+    DB-->>API: OK
+    API-->>FE: booking JSON
+    FE-->>U: Успешное сохранение

@@ -5,7 +5,7 @@ import {
   createMember as apiCreateMember,
   updateMember as apiUpdateMember,
   deleteMember as apiDeleteMember,
-} from '../api';
+} from '../apiClient';
 import { downloadExcelWorkbook } from '../utils/excel';
 
 const FILTERS_KEY = 'members_filters_v2';

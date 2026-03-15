@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { isApiAvailable, fetchMembers as apiFetchMembers, fetchBookings as apiFetchBookings, fetchPayments as apiFetchPayments, fetchCrmNotes as apiFetchCrmNotes, createCrmNote as apiCreateCrmNote, deleteCrmNote as apiDeleteCrmNote } from '../api';
+import { isApiAvailable, fetchMembers as apiFetchMembers, fetchBookings as apiFetchBookings, fetchPayments as apiFetchPayments, fetchCrmNotes as apiFetchCrmNotes, createCrmNote as apiCreateCrmNote, deleteCrmNote as apiDeleteCrmNote } from '../apiClient';
 
 const seedNotes = [
   { id: 1, memberId: 1, text: 'Предпочитает тренировки утром', createdAt: '2026-02-01' },

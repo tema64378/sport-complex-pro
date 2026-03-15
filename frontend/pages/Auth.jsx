@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { isApiAvailable, registerUser, loginUser, logoutUser, completeVkOneTap, updateMyProfile } from '../api';
+import { isApiAvailable, registerUser, loginUser, logoutUser, completeVkOneTap, updateMyProfile } from '../apiClient';
 
 const DEFAULT_USERS = [
   { id: 1, name: 'Администратор', email: 'admin@sportcomplex.com', phone: '+7 (495) 123-45-67', role: 'Администратор', password: 'admin123' },
@@ -46,6 +46,11 @@ function isValidEmail(value) {
 function isTemporaryVkEmail(value) {
   const email = String(value || '').trim().toLowerCase();
   return !email || email.endsWith('@vk.local') || email === 'vk_demo@vk.com';
+}
+
+function getVkRedirectUrl() {
+  if (typeof window === 'undefined') return 'http://localhost:4000/api/auth/vk/callback';
+  return `${window.location.origin}/api/auth/vk/callback`;
 }
 
 export default function Auth({ session, setSession }) {
@@ -249,7 +254,7 @@ export default function Auth({ session, setSession }) {
       const appId = Number(import.meta.env.VITE_VK_APP_ID || 54440927);
       VKID.Config.init({
         app: appId,
-        redirectUrl: 'https://sportcomplecspro.ru/api/auth/vk/callback',
+        redirectUrl: getVkRedirectUrl(),
         responseMode: VKID.ConfigResponseMode.Callback,
         source: VKID.ConfigSource.LOWCODE,
         scope: '',
@@ -283,7 +288,7 @@ export default function Auth({ session, setSession }) {
       const appId = Number(import.meta.env.VITE_VK_APP_ID || 54440927);
       VKID.Config.init({
         app: appId,
-        redirectUrl: 'https://sportcomplecspro.ru/api/auth/vk/callback',
+        redirectUrl: getVkRedirectUrl(),
         responseMode: VKID.ConfigResponseMode.Callback,
         source: VKID.ConfigSource.LOWCODE,
         scope: '',

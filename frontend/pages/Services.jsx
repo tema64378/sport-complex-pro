@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { isApiAvailable, fetchMembers, fetchServices, fetchReceipts, createReceipt, updateReceipt, createPayment, fetchPaymentProviders } from '../api';
+import { isApiAvailable, fetchMembers, fetchServices, fetchReceipts, createReceipt, updateReceipt, createPayment, fetchPaymentProviders } from '../apiClient';
 
 const SERVICE_CATALOG = [
   { id: 1, name: 'Доступ в тренажерный зал', category: 'Фитнес', price: 600, unit: 'посещение', description: 'Свободный доступ к тренажерам' },

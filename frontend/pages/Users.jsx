@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { fetchUsers, createUser, updateUser } from '../api';
+import { fetchUsers, createUser, updateUser } from '../apiClient';
 
 const ROLE_OPTIONS = [
   { value: 'Администратор', label: '👑 Администратор', color: '#ef4444' },

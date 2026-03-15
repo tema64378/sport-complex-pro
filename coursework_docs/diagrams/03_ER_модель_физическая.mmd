@@ -1,0 +1,105 @@
+erDiagram
+    USERS ||--o{ SESSIONS : "id=userId"
+    USERS ||--o| VK_ACCOUNTS : "id=userId"
+    TRAINERS o|--o{ CLASSES : "id=trainerId"
+    CLASSES o|--o{ BOOKINGS : "id=classId"
+    MEMBERS ||--o{ CRM_NOTES : "id=memberId"
+    MEMBERS ||--o{ RECEIPTS : "id=memberId"
+    RECEIPTS o|--o{ PAYMENTS : "id=receiptId"
+
+    USERS {
+      int id PK
+      string name
+      string email
+      string phone
+      string role
+      string password
+    }
+
+    VK_ACCOUNTS {
+      string vkUserId PK
+      int userId FK
+      string profileJson
+      string createdAt
+      string updatedAt
+    }
+
+    SESSIONS {
+      int id PK
+      int userId FK
+      string token
+      string createdAt
+      string expiresAt
+    }
+
+    MEMBERS {
+      int id PK
+      string name
+      string email
+      string phone
+      string membership
+      string joinDate
+      string status
+    }
+
+    TRAINERS {
+      int id PK
+      string name
+      string specialty
+      string experience
+      int members
+      float rating
+    }
+
+    CLASSES {
+      int id PK
+      string name
+      int trainerId FK
+      string trainerName
+      string schedule
+      int capacity
+      int enrolled
+      string level
+    }
+
+    BOOKINGS {
+      int id PK
+      string member
+      int classId FK
+      string className
+      string date
+      string time
+      string status
+    }
+
+    PAYMENTS {
+      int id PK
+      string member
+      int amount
+      string method
+      string date
+      string status
+      int receiptId FK
+      string provider
+    }
+
+    RECEIPTS {
+      int id PK
+      int memberId FK
+      string memberName
+      string membership
+      string itemsJson
+      int subtotal
+      int discount
+      int total
+      string createdAt
+      string note
+      int paymentId
+    }
+
+    CRM_NOTES {
+      int id PK
+      int memberId FK
+      string text
+      string createdAt
+    }

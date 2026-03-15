@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { isApiAvailable, fetchDeals, createDeal, updateDeal, deleteDeal } from '../api';
+import { isApiAvailable, fetchDeals, createDeal, updateDeal, deleteDeal } from '../apiClient';
 
 const DEFAULT_DEALS = [
   { id: 1, client: 'Мария Иванова', offer: 'Премиум абонемент 6 мес', value: 32000, stage: 'Переговоры', probability: 60, manager: 'Ирина', nextStep: 'Согласовать скидку', date: '2026-02-01' },

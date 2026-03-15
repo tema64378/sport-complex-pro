@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { isApiAvailable, fetchCalendarSlots as apiFetchCalendarSlots, createCalendarSlot as apiCreateCalendarSlot, deleteCalendarSlot as apiDeleteCalendarSlot } from '../api';
+import { isApiAvailable, fetchCalendarSlots as apiFetchCalendarSlots, createCalendarSlot as apiCreateCalendarSlot, deleteCalendarSlot as apiDeleteCalendarSlot } from '../apiClient';
 
 const seed = [
   { id: 1, date: '2026-02-11', time: '10:00', className: 'Йога', trainer: 'Светлана Смирнова', capacity: 16, booked: 12 },

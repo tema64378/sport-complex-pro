@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { isApiAvailable, fetchForecast } from '../api';
+import { isApiAvailable, fetchForecast } from '../apiClient';
 
 const fallbackHistory = [
   { month: 'Авг', visits: 820, pool: 260, tennis: 140 },

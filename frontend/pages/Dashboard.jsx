@@ -18,7 +18,7 @@ import {
   fetchNotifications,
   fetchPayments,
   fetchMembers,
-} from '../api';
+} from '../apiClient';
 
 const fallback = {
   metrics: {

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { logoutUser, fetchMe } from './api';
+import { logoutUser, fetchMe } from './apiClient';
 import TopNav from './components/TopNav';
 import Dashboard from './pages/Dashboard';
 import Members from './pages/Members';

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { isApiAvailable, searchAll } from '../api';
+import { isApiAvailable, searchAll } from '../apiClient';
 
 function safeLoad(key, fallback = []) {
   try {

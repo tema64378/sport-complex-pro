@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchMembersReport, fetchPaymentsReport, fetchBookingsReport, fetchSummary, downloadCsvReport } from '../api';
+import { fetchMembersReport, fetchPaymentsReport, fetchBookingsReport, fetchSummary, downloadCsvReport } from '../apiClient';
 
 export default function Reports() {
   const [activeTab, setActiveTab] = useState('summary');

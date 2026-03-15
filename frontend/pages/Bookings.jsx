@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { fetchBookings, createBooking, updateBooking, deleteBooking, isApiAvailable } from '../api';
+import { fetchBookings, createBooking, updateBooking, deleteBooking, isApiAvailable } from '../apiClient';
 
 const DENSITY_KEY = 'bookings_density_v2';
 
